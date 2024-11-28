@@ -1,6 +1,8 @@
-use std::collections::BTreeMap;
-
-use crate::mem::Memory;
+use crate::{
+    inst::{decode_inst, AddressingMode, Inst},
+    layout::Layout,
+    mem::Memory,
+};
 
 #[derive(Debug)]
 pub struct TbO2 {
@@ -17,9 +19,9 @@ impl TbO2 {
         Self {
             pc: 0,
             sp: 0,
-            a: Register::default(),
-            x: Register::default(),
-            y: Register::default(),
+            a: Default::default(),
+            x: Default::default(),
+            y: Default::default(),
             status: Status::default(),
             layout: Layout::new(u16::max_value() as usize + 1),
         }
@@ -33,126 +35,107 @@ impl TbO2 {
         self.layout.validate();
 
         self.status = Status::default();
-        self.a = Register::default();
-        self.x = Register::default();
-        self.y = Register::default();
+        self.a = Default::default();
+        self.x = Default::default();
+        self.y = Default::default();
 
         self.sp = 0;
-        self.pc = 0xFFFC;
+        self.pc = self.read_word(0xFFFC);
+        println!("starting execution at {:#04x}...", self.pc);
+    }
+
+    pub fn step(&mut self) -> Result<(), ExecutionError> {
+        let inst_byte = self.next_byte();
+
+        let Some((inst, addr_mode)) = decode_inst(inst_byte) else {
+            return Err(ExecutionError::UnknownInst(inst_byte));
+        };
+
+        match inst {
+            Inst::LDA => {
+                self.a.data = self.read_data_addressed(addr_mode) as u8;
+                self.status.negative = self.a.is_negative();
+                self.status.zero = self.a.is_zero();
+            }
+        };
+
+        Ok(())
+    }
+
+    fn read_data_addressed(&mut self, addr_mode: AddressingMode) -> u16 {
+        match addr_mode {
+            AddressingMode::Implied => unimplemented!("Implied addressing mode"),
+            AddressingMode::Immediate => self.next_byte() as u16,
+            AddressingMode::Absolute => self.next_word(),
+            AddressingMode::AbsoluteX => self.next_word() + self.x.data as u16,
+            AddressingMode::AbsoluteY => self.next_word() + self.y.data as u16,
+            AddressingMode::Indirect => {
+                let addr = self.next_word();
+                self.read_word(addr)
+            }
+            AddressingMode::XIndirect => {
+                let indexed = self.next_byte() + self.x.data;
+                let addr = self.read_word(indexed as u16);
+                self.read_byte(addr) as u16
+            }
+            AddressingMode::IndirectY => {
+                let zp_addr = self.next_byte() as u16;
+                let indexed = self.read_word(zp_addr) + self.y.data as u16;
+                self.read_byte(indexed) as u16
+            }
+            AddressingMode::Relative => self.next_byte() as u16 + self.pc,
+            AddressingMode::ZeroPage => {
+                let zp_addr = self.next_byte() as u16;
+                self.read_byte(zp_addr) as u16
+            }
+            AddressingMode::ZeroPageX => {
+                let indexed = self.next_byte() + self.x.data;
+                self.read_byte(indexed as u16) as u16
+            }
+            AddressingMode::ZeroPageY => {
+                let indexed = self.next_byte() + self.y.data;
+                self.read_byte(indexed as u16) as u16
+            }
+        }
+    }
+
+    fn next_byte(&mut self) -> u8 {
+        let byte = self.read_byte(self.pc);
+        self.pc += 1;
+        byte
+    }
+
+    fn next_word(&mut self) -> u16 {
+        let word = self.read_word(self.pc);
+        self.pc += 2;
+        word
+    }
+
+    fn read_byte(&self, addr: u16) -> u8 {
+        self.layout.read_byte(addr as usize)
+    }
+
+    fn read_word(&self, addr: u16) -> u16 {
+        let lo = self.layout.read_byte(addr as usize) as u16;
+        let hi = self.layout.read_byte(addr as usize + 1) as u16;
+        (hi << 8) | lo
+    }
+
+    fn write_byte(&mut self, addr: u16, data: u8) {
+        self.layout.write_byte(addr as usize, data);
+    }
+
+    fn write_word(&mut self, addr: u16, data: u16) {
+        let lo = (data & 0xFF) as u8;
+        let hi = ((data >> 8) & 0xFF) as u8;
+        self.layout.write_byte(addr as usize, lo);
+        self.layout.write_byte(addr as usize + 1, hi);
     }
 }
 
 #[derive(Debug)]
-struct Layout {
-    max_size: usize,
-    slots: BTreeMap<usize, (usize, Box<dyn Memory>)>,
-}
-impl Layout {
-    pub fn new(max_size: usize) -> Self {
-        Self {
-            max_size,
-            slots: BTreeMap::new(),
-        }
-    }
-
-    pub fn read_byte(&self, addr: usize) -> u8 {
-        let (offset, mem) = self.get_mem_at_addr(addr);
-        mem.read_byte(addr - offset)
-    }
-
-    pub fn write_byte(&mut self, addr: usize, data: u8) {
-        let (offset, mem) = self.get_mem_at_addr_mut(addr);
-        mem.write_byte(addr - offset, data);
-    }
-
-    fn get_mem_at_addr(&self, addr: usize) -> (usize, &Box<dyn Memory>) {
-        let item = self.slots.range(..addr).next_back().unwrap();
-        (*item.0, &item.1 .1)
-    }
-
-    fn get_mem_at_addr_mut(&mut self, addr: usize) -> (usize, &mut Box<dyn Memory>) {
-        let item = self.slots.range_mut(..addr).next_back().unwrap();
-        (*item.0, &mut item.1 .1)
-    }
-}
-impl Layout {
-    pub fn set_region(&mut self, addr_start: usize, addr_end: usize, mem: Box<dyn Memory>) {
-        assert!(
-            addr_start <= addr_end,
-            "addr_end cannot be less than addr_start"
-        );
-        assert!(
-            addr_end - addr_start + 1 <= mem.get_byte_size(),
-            "region byte size is too large to fit into the input memory capacity\
-            , addr {:#x} to addr {:#x} requires {} bytes but the memory only has {} bytes",
-            addr_start,
-            addr_end,
-            addr_end - addr_start + 1,
-            mem.get_byte_size()
-        );
-        assert!(
-            addr_end < self.max_size,
-            "addr_end cannot be greater than layout's max byte size"
-        );
-
-        let (prev, next) = {
-            use std::ops::Bound::*;
-
-            let mut before = self.slots.range((Unbounded, Excluded(addr_start)));
-            let mut after = self.slots.range((Excluded(addr_start), Unbounded));
-
-            (before.next_back(), after.next())
-        };
-
-        if let Some((_, (end, _))) = prev {
-            assert!(*end < addr_start, "region overlapped from the lower addr");
-        }
-        if let Some((start, _)) = next {
-            assert!(*start < addr_end, "region overlapped from the higher addr");
-        }
-
-        assert!(
-            !self.slots.contains_key(&addr_start),
-            "the region is already in used"
-        );
-        self.slots.insert(addr_start, (addr_end, mem));
-    }
-
-    fn validate(&self) {
-        let mut prev_end: Option<usize> = None;
-        for (start, (end, _)) in &self.slots {
-            if let Some(prev_end) = prev_end {
-                assert!(
-                    start - prev_end == 1,
-                    "undefined memory region from addr {:#x} to {:#x}",
-                    prev_end + 1,
-                    start - 1
-                );
-            } else {
-                assert!(
-                    *start == 0,
-                    "undefined memory region from addr {:#x} to {:#x}",
-                    0,
-                    start - 1,
-                )
-            }
-            prev_end = Some(*end);
-        }
-        if let Some(prev_end) = prev_end {
-            assert!(
-                prev_end == self.max_size - 1,
-                "undefined memory region from addr {:#x} to {:#x}",
-                prev_end + 1,
-                self.max_size - 1
-            );
-        } else {
-            panic!(
-                "undefined memory region from addr {:#x} to {:#x}",
-                0,
-                self.max_size - 1
-            );
-        }
-    }
+pub enum ExecutionError {
+    UnknownInst(u8),
 }
 
 #[derive(Debug, Default)]
@@ -169,4 +152,13 @@ struct Status {
 #[derive(Debug, Default)]
 struct Register {
     data: u8,
+}
+impl Register {
+    pub fn is_negative(&self) -> bool {
+        (self.data & 0b10000000) > 0
+    }
+
+    pub fn is_zero(&self) -> bool {
+        self.data == 0
+    }
 }

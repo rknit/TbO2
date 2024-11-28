@@ -3,6 +3,8 @@ use mem::{RAM, ROM};
 
 #[allow(dead_code)]
 pub mod cpu;
+pub mod inst;
+pub mod layout;
 pub mod mem;
 
 fn main() {
@@ -11,4 +13,11 @@ fn main() {
     cpu.set_region(0x8000, 0xFFFF, Box::new(ROM::<0x8000>::new()));
 
     cpu.reset();
+
+    loop {
+        if let Err(e) = cpu.step() {
+            eprintln!("Error: {:?}", e);
+            break;
+        }
+    }
 }
