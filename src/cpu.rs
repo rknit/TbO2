@@ -25,6 +25,10 @@ impl TbO2 {
         }
     }
 
+    pub fn set_region(&mut self, addr_start: usize, addr_end: usize, mem: Box<dyn Memory>) {
+        self.layout.set_region(addr_start, addr_end, mem);
+    }
+
     pub fn reset(&mut self) {
         self.layout.validate();
 
@@ -35,10 +39,6 @@ impl TbO2 {
 
         self.sp = 0;
         self.pc = 0xFFFC;
-    }
-
-    pub fn set_region(&mut self, addr_start: usize, addr_end: usize, mem: Box<dyn Memory>) {
-        self.layout.set_region(addr_start, addr_end, mem);
     }
 }
 
@@ -54,6 +54,26 @@ impl Layout {
             slots: BTreeMap::new(),
         }
     }
+
+    pub fn read_byte(&self, addr: usize) -> u8 {
+        let (offset, mem) = self.get_mem_at_addr(addr);
+        mem.read_byte(addr - offset)
+    }
+
+    pub fn write_byte(&mut self, addr: usize, data: u8) {
+        let (offset, mem) = self.get_mem_at_addr_mut(addr);
+        mem.write_byte(addr - offset, data);
+    }
+
+    fn get_mem_at_addr(&self, addr: usize) -> (usize, &Box<dyn Memory>) {
+        let item = self.slots.range(..addr).next_back().unwrap();
+        (*item.0, &item.1 .1)
+    }
+
+    fn get_mem_at_addr_mut(&mut self, addr: usize) -> (usize, &mut Box<dyn Memory>) {
+        let item = self.slots.range_mut(..addr).next_back().unwrap();
+        (*item.0, &mut item.1 .1)
+    }
 }
 impl Layout {
     pub fn set_region(&mut self, addr_start: usize, addr_end: usize, mem: Box<dyn Memory>) {
@@ -63,7 +83,12 @@ impl Layout {
         );
         assert!(
             addr_end - addr_start + 1 <= mem.get_byte_size(),
-            "region byte size is too large to fit into the input memory capacity"
+            "region byte size is too large to fit into the input memory capacity\
+            , addr {:#x} to addr {:#x} requires {} bytes but the memory only has {} bytes",
+            addr_start,
+            addr_end,
+            addr_end - addr_start + 1,
+            mem.get_byte_size()
         );
         assert!(
             addr_end < self.max_size,
