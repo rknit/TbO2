@@ -54,15 +54,15 @@ impl TbO2 {
 
         match inst {
             Inst::LDA => {
-                self.a.data = self.read_byte_addressed(addr_mode);
+                self.a.data = self.read_byte_addressed(addr_mode).1;
                 self.check_nz(self.a);
             }
             Inst::LDX => {
-                self.x.data = self.read_byte_addressed(addr_mode);
+                self.x.data = self.read_byte_addressed(addr_mode).1;
                 self.check_nz(self.x);
             }
             Inst::LDY => {
-                self.y.data = self.read_byte_addressed(addr_mode);
+                self.y.data = self.read_byte_addressed(addr_mode).1;
                 self.check_nz(self.y);
             }
 
@@ -103,6 +103,47 @@ impl TbO2 {
             Inst::PLP => {
                 self.status = Status::from(self.pull_byte());
             }
+
+            Inst::ROL => {
+                let mut data;
+                let send_carry;
+                if addr_mode == AddressingMode::Implied {
+                    data = self.a.data;
+                    send_carry = (data & 0b10000000) > 0;
+                    data <<= 1;
+                    data |= self.status.carry as u8;
+                    self.a.data = data;
+                } else {
+                    let read = self.read_byte_addressed(addr_mode);
+                    data = read.1;
+                    send_carry = (data & 0b10000000) > 0;
+                    data <<= 1;
+                    data |= self.status.carry as u8;
+                    self.write_byte(read.0, data);
+                };
+                self.check_nz(Register { data });
+                self.status.carry = send_carry;
+            }
+            Inst::ROR => {
+                let mut data;
+                let send_carry;
+                if addr_mode == AddressingMode::Implied {
+                    data = self.a.data;
+                    send_carry = (data & 0b1) > 0;
+                    data >>= 1;
+                    data |= (self.status.carry as u8) << 7;
+                    self.a.data = data;
+                } else {
+                    let read = self.read_byte_addressed(addr_mode);
+                    data = read.1;
+                    send_carry = (data & 0b1) > 0;
+                    data >>= 1;
+                    data |= (self.status.carry as u8) << 7;
+                    self.write_byte(read.0, data);
+                };
+                self.check_nz(Register { data });
+                self.status.carry = send_carry;
+            }
         };
 
         Ok(())
@@ -127,45 +168,45 @@ impl TbO2 {
         self.sp as u16 + 0x100
     }
 
-    fn read_byte_addressed(&mut self, addr_mode: AddressingMode) -> u8 {
+    fn read_byte_addressed(&mut self, addr_mode: AddressingMode) -> (u16, u8) {
         match addr_mode {
             AddressingMode::Implied => unimplemented!("Implied addressing mode"),
-            AddressingMode::Immediate => self.next_byte(),
+            AddressingMode::Immediate => (self.pc, self.next_byte()),
             AddressingMode::Absolute => {
                 let addr = self.next_word();
-                self.read_byte(addr)
+                (addr, self.read_byte(addr))
             }
             AddressingMode::AbsoluteX => {
                 let addr = self.next_word() + self.x.data as u16;
-                self.read_byte(addr)
+                (addr, self.read_byte(addr))
             }
             AddressingMode::AbsoluteY => {
                 let addr = self.next_word() + self.y.data as u16;
-                self.read_byte(addr)
+                (addr, self.read_byte(addr))
             }
             AddressingMode::Indirect => unimplemented!("Indirect addressing mode"),
             AddressingMode::XIndirect => {
                 let indexed = self.next_byte() + self.x.data;
                 let addr = self.read_word(indexed as u16);
-                self.read_byte(addr)
+                (addr, self.read_byte(addr))
             }
             AddressingMode::IndirectY => {
                 let zp_addr = self.next_byte() as u16;
-                let indexed = self.read_word(zp_addr) + self.y.data as u16;
-                self.read_byte(indexed)
+                let addr = self.read_word(zp_addr) + self.y.data as u16;
+                (addr, self.read_byte(addr))
             }
             AddressingMode::Relative => unimplemented!("Relative addressing mode"),
             AddressingMode::ZeroPage => {
-                let zp_addr = self.next_byte() as u16;
-                self.read_byte(zp_addr)
+                let addr = self.next_byte() as u16;
+                (addr, self.read_byte(addr))
             }
             AddressingMode::ZeroPageX => {
-                let indexed = self.next_byte() + self.x.data;
-                self.read_byte(indexed as u16)
+                let addr = (self.next_byte() + self.x.data) as u16;
+                (addr, self.read_byte(addr))
             }
             AddressingMode::ZeroPageY => {
-                let indexed = self.next_byte() + self.y.data;
-                self.read_byte(indexed as u16)
+                let addr = (self.next_byte() + self.y.data) as u16;
+                (addr, self.read_byte(addr))
             }
         }
     }

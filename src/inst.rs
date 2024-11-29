@@ -19,6 +19,9 @@ pub enum Inst {
     PHP,
     PLA,
     PLP,
+
+    ROL,
+    ROR,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -89,6 +92,18 @@ pub fn decode_inst(byte: u8) -> Option<(Inst, AddressingMode)> {
         0x08 => (PHP, Implied),
         0x68 => (PLA, Implied),
         0x28 => (PLP, Implied),
+
+        0x2A => (ROL, Implied),
+        0x26 => (ROL, ZeroPage),
+        0x36 => (ROL, ZeroPageX),
+        0x2E => (ROL, Absolute),
+        0x3E => (ROL, AbsoluteX),
+
+        0x6A => (ROR, Implied),
+        0x66 => (ROR, ZeroPage),
+        0x76 => (ROR, ZeroPageX),
+        0x6E => (ROR, Absolute),
+        0x7E => (ROR, AbsoluteX),
 
         _ => return None,
     })
