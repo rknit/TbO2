@@ -39,9 +39,10 @@ impl TbO2 {
         self.x = Default::default();
         self.y = Default::default();
 
-        self.sp = 0;
+        self.sp = 0xFF;
+        println!("setting stack pointer to {:#06x}...", self.get_sp());
         self.pc = self.read_word(0xFFFC);
-        println!("starting execution at {:#04x}...", self.pc);
+        println!("starting execution at {:#06x}...", self.pc);
     }
 
     pub fn step(&mut self) -> Result<(), ExecutionError> {
@@ -92,6 +93,16 @@ impl TbO2 {
                 self.a = self.y;
                 self.check_nz(self.a);
             }
+
+            Inst::PHA => self.push_byte(self.a.data),
+            Inst::PHP => self.push_byte(self.status.into()),
+            Inst::PLA => {
+                self.a.data = self.pull_byte();
+                self.check_nz(self.a);
+            }
+            Inst::PLP => {
+                self.status = Status::from(self.pull_byte());
+            }
         };
 
         Ok(())
@@ -100,6 +111,20 @@ impl TbO2 {
     fn check_nz(&mut self, reg: Register) {
         self.status.negative = reg.is_negative();
         self.status.zero = reg.is_zero();
+    }
+
+    fn push_byte(&mut self, data: u8) {
+        self.write_byte(self.get_sp(), data);
+        self.sp -= 1;
+    }
+
+    fn pull_byte(&mut self) -> u8 {
+        self.sp += 1;
+        self.read_byte(self.get_sp())
+    }
+
+    fn get_sp(&self) -> u16 {
+        self.sp as u16 + 0x100
     }
 
     fn read_byte_addressed(&mut self, addr_mode: AddressingMode) -> u8 {
@@ -145,45 +170,45 @@ impl TbO2 {
         }
     }
 
-    fn write_byte_addressed(&mut self, byte: u8, addr_mode: AddressingMode) {
+    fn write_byte_addressed(&mut self, data: u8, addr_mode: AddressingMode) {
         match addr_mode {
             AddressingMode::Implied => unimplemented!("Implied addressing mode"),
             AddressingMode::Immediate => unimplemented!("Immediate addressing mode"),
             AddressingMode::Absolute => {
                 let addr = self.next_word();
-                self.write_byte(addr, byte);
+                self.write_byte(addr, data);
             }
             AddressingMode::AbsoluteX => {
                 let addr = self.next_word() + self.x.data as u16;
-                self.write_byte(addr, byte);
+                self.write_byte(addr, data);
             }
             AddressingMode::AbsoluteY => {
                 let addr = self.next_word() + self.y.data as u16;
-                self.write_byte(addr, byte);
+                self.write_byte(addr, data);
             }
             AddressingMode::Indirect => unimplemented!("Indirect addressing mode"),
             AddressingMode::XIndirect => {
                 let indexed = self.next_byte() + self.x.data;
                 let addr = self.read_word(indexed as u16);
-                self.write_byte(addr, byte);
+                self.write_byte(addr, data);
             }
             AddressingMode::IndirectY => {
                 let zp_addr = self.next_byte() as u16;
                 let indexed = self.read_word(zp_addr) + self.y.data as u16;
-                self.write_byte(indexed, byte);
+                self.write_byte(indexed, data);
             }
             AddressingMode::Relative => unimplemented!("Relative addressing mode"),
             AddressingMode::ZeroPage => {
                 let zp_addr = self.next_byte() as u16;
-                self.write_byte(zp_addr, byte);
+                self.write_byte(zp_addr, data);
             }
             AddressingMode::ZeroPageX => {
                 let indexed = self.next_byte() + self.x.data;
-                self.write_byte(indexed as u16, byte);
+                self.write_byte(indexed as u16, data);
             }
             AddressingMode::ZeroPageY => {
                 let indexed = self.next_byte() + self.y.data;
-                self.write_byte(indexed as u16, byte);
+                self.write_byte(indexed as u16, data);
             }
         }
     }
@@ -227,7 +252,7 @@ pub enum ExecutionError {
     UnknownInst(u8),
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Copy)]
 struct Status {
     negative: bool,
     overflow: bool,
@@ -236,6 +261,31 @@ struct Status {
     interrupt: bool,
     zero: bool,
     carry: bool,
+}
+impl Into<u8> for Status {
+    fn into(self) -> u8 {
+        (self.negative as u8) << 7
+            | (self.overflow as u8) << 6
+            | (1 << 5)
+            | (1 << 4)
+            | (self.decimal as u8) << 3
+            | (self.interrupt as u8) << 2
+            | (self.zero as u8) << 1
+            | (self.carry as u8)
+    }
+}
+impl From<u8> for Status {
+    fn from(value: u8) -> Self {
+        Self {
+            negative: (value & 0b10000000) > 0,
+            overflow: (value & 0b1000000) > 0,
+            break_: false,
+            decimal: (value & 0b1000) > 0,
+            interrupt: (value & 0b100) > 0,
+            zero: (value & 0b10) > 0,
+            carry: (value & 0b1) > 0,
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -249,10 +299,5 @@ impl Register {
 
     pub fn is_zero(&self) -> bool {
         self.data == 0
-    }
-}
-impl From<u8> for Register {
-    fn from(value: u8) -> Self {
-        Self { data: value }
     }
 }

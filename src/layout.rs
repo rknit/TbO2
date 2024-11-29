@@ -43,7 +43,7 @@ impl Layout {
         assert!(
             addr_end - addr_start + 1 <= mem.get_byte_size(),
             "region byte size is too large to fit into the input memory capacity\
-            , addr {:#x} to addr {:#x} requires {} bytes but the memory only has {} bytes",
+            , addr {:#0x} to addr {:#0x} requires {} bytes but the memory only has {} bytes",
             addr_start,
             addr_end,
             addr_end - addr_start + 1,
@@ -84,14 +84,14 @@ impl Layout {
             if let Some(prev_end) = prev_end {
                 assert!(
                     start - prev_end == 1,
-                    "undefined memory region from addr {:#x} to {:#x}",
+                    "undefined memory region from addr {:#0x} to {:#0x}",
                     prev_end + 1,
                     start - 1
                 );
             } else {
                 assert!(
                     *start == 0,
-                    "undefined memory region from addr {:#x} to {:#x}",
+                    "undefined memory region from addr {:#0x} to {:#0x}",
                     0,
                     start - 1,
                 )
@@ -101,13 +101,13 @@ impl Layout {
         if let Some(prev_end) = prev_end {
             assert!(
                 prev_end == self.max_size - 1,
-                "undefined memory region from addr {:#x} to {:#x}",
+                "undefined memory region from addr {:#0x} to {:#0x}",
                 prev_end + 1,
                 self.max_size - 1
             );
         } else {
             panic!(
-                "undefined memory region from addr {:#x} to {:#x}",
+                "undefined memory region from addr {:#0x} to {:#0x}",
                 0,
                 self.max_size - 1
             );

@@ -3,15 +3,22 @@ pub enum Inst {
     LDA,
     LDX,
     LDY,
+
     STA,
     STX,
     STY,
+
     TAX,
     TAY,
     TSX,
     TXA,
     TXS,
     TYA,
+
+    PHA,
+    PHP,
+    PLA,
+    PLP,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,6 +84,11 @@ pub fn decode_inst(byte: u8) -> Option<(Inst, AddressingMode)> {
         0x8A => (TXA, Implied),
         0x9A => (TXS, Implied),
         0x98 => (TYA, Implied),
+
+        0x48 => (PHA, Implied),
+        0x08 => (PHP, Implied),
+        0x68 => (PLA, Implied),
+        0x28 => (PLP, Implied),
 
         _ => return None,
     })
