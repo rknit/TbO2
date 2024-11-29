@@ -1,6 +1,8 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Inst {
     LDA,
+    LDX,
+    LDY,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,6 +33,18 @@ pub fn decode_inst(byte: u8) -> Option<(Inst, AddressingMode)> {
         0xB9 => (LDA, AbsoluteY),
         0xA1 => (LDA, XIndirect),
         0xB1 => (LDA, IndirectY),
+
+        0xA2 => (LDX, Immediate),
+        0xA6 => (LDX, ZeroPage),
+        0xB6 => (LDX, ZeroPageY),
+        0xAE => (LDX, Absolute),
+        0xBE => (LDX, AbsoluteY),
+
+        0xA0 => (LDY, Immediate),
+        0xA4 => (LDY, ZeroPage),
+        0xB4 => (LDY, ZeroPageX),
+        0xAC => (LDY, Absolute),
+        0xBC => (LDY, AbsoluteX),
 
         _ => return None,
     })
