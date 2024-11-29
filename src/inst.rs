@@ -6,6 +6,12 @@ pub enum Inst {
     STA,
     STX,
     STY,
+    TAX,
+    TAY,
+    TSX,
+    TXA,
+    TXS,
+    TYA,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,6 +70,13 @@ pub fn decode_inst(byte: u8) -> Option<(Inst, AddressingMode)> {
         0x84 => (STY, ZeroPage),
         0x94 => (STY, ZeroPageX),
         0x8C => (STY, Absolute),
+
+        0xAA => (TAX, Implied),
+        0xA8 => (TAY, Implied),
+        0xBA => (TSX, Implied),
+        0x8A => (TXA, Implied),
+        0x9A => (TXS, Implied),
+        0x98 => (TYA, Implied),
 
         _ => return None,
     })

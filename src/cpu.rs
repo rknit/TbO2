@@ -64,9 +64,34 @@ impl TbO2 {
                 self.y.data = self.read_byte_addressed(addr_mode);
                 self.check_nz(self.y);
             }
+
             Inst::STA => self.write_byte_addressed(self.a.data, addr_mode),
             Inst::STX => self.write_byte_addressed(self.x.data, addr_mode),
             Inst::STY => self.write_byte_addressed(self.y.data, addr_mode),
+
+            Inst::TAX => {
+                self.x = self.a;
+                self.check_nz(self.x);
+            }
+            Inst::TAY => {
+                self.y = self.a;
+                self.check_nz(self.y);
+            }
+            Inst::TSX => {
+                self.x.data = self.sp;
+                self.check_nz(self.x);
+            }
+            Inst::TXA => {
+                self.a = self.x;
+                self.check_nz(self.a);
+            }
+            Inst::TXS => {
+                self.sp = self.x.data;
+            }
+            Inst::TYA => {
+                self.a = self.y;
+                self.check_nz(self.a);
+            }
         };
 
         Ok(())
