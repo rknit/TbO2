@@ -114,12 +114,22 @@ impl CPU {
 
             Inst::PHA => self.push_byte(self.a.data),
             Inst::PHP => self.push_byte(self.status.into()),
+            Inst::PHX => self.push_byte(self.x.data),
+            Inst::PHY => self.push_byte(self.y.data),
             Inst::PLA => {
                 self.a.data = self.pull_byte();
                 self.check_nz(self.a);
             }
             Inst::PLP => {
                 self.status = Status::from(self.pull_byte());
+            }
+            Inst::PLX => {
+                self.x.data = self.pull_byte();
+                self.check_nz(self.x);
+            }
+            Inst::PLY => {
+                self.y.data = self.pull_byte();
+                self.check_nz(self.y);
             }
 
             Inst::DEC => {
