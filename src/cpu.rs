@@ -70,6 +70,7 @@ impl CPU {
         let Some((inst, addr_mode)) = decode_inst(inst_byte) else {
             return Err(ExecutionError::UnknownInst(inst_byte));
         };
+        //println!("{:#06x} {:?} {:?}", prev_pc, inst, addr_mode);
 
         match inst {
             Inst::LDA => {
@@ -124,10 +125,15 @@ impl CPU {
             }
 
             Inst::DEC => {
-                let (addr, mut data) = self.read_byte_addressed(addr_mode);
-                data -= 1;
-                self.write_byte(addr, data);
-                self.check_nz(Register { data });
+                if addr_mode == AddressingMode::Implied {
+                    self.a.data -= 1;
+                    self.check_nz(self.a);
+                } else {
+                    let (addr, mut data) = self.read_byte_addressed(addr_mode);
+                    data -= 1;
+                    self.write_byte(addr, data);
+                    self.check_nz(Register { data });
+                }
             }
             Inst::DEX => {
                 self.x.data -= 1;
@@ -138,10 +144,15 @@ impl CPU {
                 self.check_nz(self.y);
             }
             Inst::INC => {
-                let (addr, mut data) = self.read_byte_addressed(addr_mode);
-                data += 1;
-                self.write_byte(addr, data);
-                self.check_nz(Register { data });
+                if addr_mode == AddressingMode::Implied {
+                    self.a.data += 1;
+                    self.check_nz(self.a);
+                } else {
+                    let (addr, mut data) = self.read_byte_addressed(addr_mode);
+                    data += 1;
+                    self.write_byte(addr, data);
+                    self.check_nz(Register { data });
+                }
             }
             Inst::INX => {
                 self.x.data += 1;
