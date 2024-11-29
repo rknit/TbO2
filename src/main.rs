@@ -9,10 +9,11 @@ pub mod mem;
 
 fn main() {
     let mut cpu = TbO2::new();
-    cpu.set_region(0x0000, 0x7FFF, Box::new(RAM::<0x8000>::new()));
 
-    let mut rom = ROM::<0x8000>::new();
-    rom.load_bytes(0xFFFC - 0x8000, &[0x00, 0xFF]);
+    let ram = RAM::<0x8000>::new();
+    cpu.set_region(0x0000, 0x7FFF, Box::new(ram));
+
+    let rom = ROM::<0x8000>::new();
     cpu.set_region(0x8000, 0xFFFF, Box::new(rom));
 
     cpu.reset();

@@ -40,9 +40,9 @@ impl TbO2 {
         self.y = Default::default();
 
         self.sp = 0xFF;
-        println!("setting stack pointer to {:#06x}...", self.get_sp());
+        println!("Setting stack pointer to {:#06x}...", self.get_sp());
         self.pc = self.read_word(0xFFFC);
-        println!("starting execution at {:#06x}...", self.pc);
+        println!("Starting execution at {:#06x}...", self.pc);
     }
 
     pub fn step(&mut self) -> Result<(), ExecutionError> {
@@ -131,6 +131,18 @@ impl TbO2 {
             Inst::INY => {
                 self.y.data += 1;
                 self.check_nz(self.y);
+            }
+
+            Inst::ADC => {
+                let operand = self.read_byte_addressed(addr_mode).1 as u16;
+                let carry = self.status.carry as u16;
+                let result = self.a.data as u16 + operand + carry;
+
+                self.status.carry = result > 0xFF;
+                self.status.overflow =
+                    (self.a.data & operand as u8 & (self.a.data ^ result as u8) & 0x80) > 0;
+                self.a.data = result as u8;
+                self.check_nz(self.a);
             }
 
             Inst::ROL => {

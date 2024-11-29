@@ -27,6 +27,8 @@ pub enum Inst {
     INX,
     INY,
 
+    ADC,
+
     ROL,
     ROR,
 }
@@ -112,6 +114,15 @@ pub fn decode_inst(byte: u8) -> Option<(Inst, AddressingMode)> {
         0xFE => (INC, AbsoluteX),
         0xE8 => (INX, Implied),
         0xC8 => (INY, Implied),
+
+        0x69 => (ADC, Immediate),
+        0x65 => (ADC, ZeroPage),
+        0x75 => (ADC, ZeroPageX),
+        0x6D => (ADC, Absolute),
+        0x7D => (ADC, AbsoluteX),
+        0x79 => (ADC, AbsoluteY),
+        0x61 => (ADC, XIndirect),
+        0x71 => (ADC, IndirectY),
 
         0x2A => (ROL, Implied),
         0x26 => (ROL, ZeroPage),
