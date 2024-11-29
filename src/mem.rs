@@ -80,7 +80,9 @@ impl<const BYTE_SIZE: usize> Memory for ROM<BYTE_SIZE> {
         self.data[wrapped_addr]
     }
 
-    fn write_byte(&mut self, _addr: usize, _data: u8) {}
+    fn write_byte(&mut self, _addr: usize, _data: u8) {
+        eprintln!("WARN: writing to ROM");
+    }
 
     fn get_byte_size(&self) -> usize {
         self.data.len()

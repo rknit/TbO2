@@ -6,7 +6,7 @@ use crate::{
 
 #[derive(Debug)]
 pub struct CPU {
-    pc: u16,
+    pub pc: u16,
     sp: u8,
     a: Register,
     x: Register,
@@ -40,9 +40,7 @@ impl CPU {
         self.y = Default::default();
 
         self.sp = 0xFF;
-        println!("Setting stack pointer to {:#06x}...", self.get_sp());
         self.pc = self.read_word(0xFFFC);
-        println!("Starting execution at {:#06x}...", self.pc);
     }
 
     pub fn irq(&mut self) {
@@ -149,17 +147,17 @@ impl CPU {
                     self.check_nz(self.a);
                 } else {
                     let (addr, mut data) = self.read_byte_addressed(addr_mode);
-                    data += 1;
+                    data = data.wrapping_add(1);
                     self.write_byte(addr, data);
                     self.check_nz(Register { data });
                 }
             }
             Inst::INX => {
-                self.x.data += 1;
+                self.x.data = self.x.data.wrapping_add(1);
                 self.check_nz(self.x);
             }
             Inst::INY => {
-                self.y.data += 1;
+                self.y.data = self.y.data.wrapping_add(1);
                 self.check_nz(self.y);
             }
 
@@ -292,7 +290,7 @@ impl CPU {
 
             Inst::CMP => {
                 let operand = self.read_byte_addressed(addr_mode).1;
-                let result = self.a.data - operand;
+                let result = self.a.data.wrapping_sub(operand);
                 self.check_nz(Register { data: result });
                 self.status.carry = self.a.data >= operand;
             }
@@ -513,7 +511,7 @@ impl CPU {
         word
     }
 
-    fn read_byte(&self, addr: u16) -> u8 {
+    pub fn read_byte(&self, addr: u16) -> u8 {
         self.layout.read_byte(addr as usize)
     }
 
@@ -523,7 +521,7 @@ impl CPU {
         (hi << 8) | lo
     }
 
-    fn write_byte(&mut self, addr: u16, data: u8) {
+    pub fn write_byte(&mut self, addr: u16, data: u8) {
         self.layout.write_byte(addr as usize, data);
     }
 }

@@ -12,16 +12,11 @@ MODE  = $2B                            ; $00=XAM, $7F=STOR, $AE=BLOCK XAM
 
 IN    = $0200                          ; Input buffer
 
-ACIA_DATA   = $5000
-ACIA_STATUS = $5001
-ACIA_CMD    = $5002
-ACIA_CTRL   = $5003
+CHR_DATA    = $5000
+CHR_MODE    = $5001                    ; Mode 0: Display char, 1: Poll input 
+CHR_REQ     = $5002                    ; Set to high to request input/output
 
 RESET:
-                LDA     #$1F           ; 8-N-1, 19200 baud.
-                STA     ACIA_CTRL
-                LDA     #$0B           ; No parity, no echo, no interrupts.
-                STA     ACIA_CMD
                 LDA     #$1B           ; Begin with escape.
 
 NOTCR:
@@ -45,10 +40,13 @@ BACKSPACE:      DEY                    ; Back up text index.
                 BMI     GETLINE        ; Beyond start of line, reinitialize.
 
 NEXTCHAR:
-                LDA     ACIA_STATUS    ; Check status.
-                AND     #$08           ; Key ready?
-                BEQ     NEXTCHAR       ; Loop until ready.
-                LDA     ACIA_DATA      ; Load character. B7 will be '0'.
+                LDA     #$01
+                STA     CHR_MODE       ; Set to poll input mode
+                STA     CHR_REQ        ; Set request to high
+WAIT_CHAR:
+                LDA     CHR_REQ        ; Check status.
+                BNE     WAIT_CHAR      ; Loop until ready.
+                LDA     CHR_DATA       ; Load character. B7 will be '0'.
                 STA     IN,Y           ; Add to text buffer.
                 JSR     ECHO           ; Display character.
                 CMP     #$0D           ; CR?
@@ -180,10 +178,14 @@ PRHEX:
 
 ECHO:
                 PHA                    ; Save A.
-                STA     ACIA_DATA      ; Output character.
-                LDA     #$FF           ; Initialize delay loop.
-TXDELAY:        DEC                    ; Decrement A.
-                BNE     TXDELAY        ; Until A gets to 0.
+                STA     CHR_DATA       ; Send A to char output
+                LDA     #$0
+                STA     CHR_MODE       ; Set mode to display
+                LDA     #$1
+                STA     CHR_REQ        ; Set request to high
+WAIT_OUTPUT:
+                LDA     CHR_REQ
+                BNE     WAIT_OUTPUT    ; Loop until the request is cleared 
                 PLA                    ; Restore A.
                 RTS                    ; Return.
 
