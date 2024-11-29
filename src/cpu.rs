@@ -251,6 +251,14 @@ impl TbO2 {
                 self.check_nz(Register { data });
                 self.status.carry = send_carry;
             }
+
+            Inst::CLC => self.status.carry = false,
+            Inst::CLD => self.status.decimal = false,
+            Inst::CLI => self.status.interrupt = false,
+            Inst::CLV => self.status.overflow = false,
+            Inst::SEC => self.status.carry = true,
+            Inst::SED => self.status.decimal = true,
+            Inst::SEI => self.status.interrupt = true,
         };
 
         Ok(())

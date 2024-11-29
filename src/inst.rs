@@ -38,6 +38,14 @@ pub enum Inst {
     LSR,
     ROL,
     ROR,
+
+    CLC,
+    CLD,
+    CLI,
+    CLV,
+    SEC,
+    SED,
+    SEI,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -190,6 +198,14 @@ pub fn decode_inst(byte: u8) -> Option<(Inst, AddressingMode)> {
         0x76 => (ROR, ZeroPageX),
         0x6E => (ROR, Absolute),
         0x7E => (ROR, AbsoluteX),
+
+        0x18 => (CLC, Implied),
+        0xD8 => (CLD, Implied),
+        0x58 => (CLI, Implied),
+        0xB8 => (CLV, Implied),
+        0x38 => (SEC, Implied),
+        0xF8 => (SED, Implied),
+        0x78 => (SEI, Implied),
 
         _ => return None,
     })
