@@ -144,6 +144,20 @@ impl TbO2 {
                 self.a.data = result as u8;
                 self.check_nz(self.a);
             }
+            Inst::SBC => {
+                let operand = self.read_byte_addressed(addr_mode).1 as u16;
+                let operand = !operand; // invert operand to get -operand - 1, then we can use adc
+                let carry = self.status.carry as u16;
+                let result = (self.a.data as u16)
+                    .wrapping_add(operand)
+                    .wrapping_add(carry);
+
+                self.status.carry = result > 0xFF;
+                self.status.overflow =
+                    (self.a.data & operand as u8 & (self.a.data ^ result as u8) & 0x80) > 0;
+                self.a.data = result as u8;
+                self.check_nz(self.a);
+            }
 
             Inst::ROL => {
                 let mut data;
