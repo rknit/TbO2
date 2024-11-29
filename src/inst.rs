@@ -34,6 +34,8 @@ pub enum Inst {
     EOR,
     ORA,
 
+    ASL,
+    LSR,
     ROL,
     ROR,
 }
@@ -164,6 +166,18 @@ pub fn decode_inst(byte: u8) -> Option<(Inst, AddressingMode)> {
         0x19 => (ORA, AbsoluteY),
         0x01 => (ORA, XIndirect),
         0x11 => (ORA, IndirectY),
+
+        0x0A => (ASL, Implied),
+        0x06 => (ASL, ZeroPage),
+        0x16 => (ASL, ZeroPageX),
+        0x0E => (ASL, Absolute),
+        0x1E => (ASL, AbsoluteX),
+
+        0x4A => (LSR, Implied),
+        0x46 => (LSR, ZeroPage),
+        0x56 => (LSR, ZeroPageX),
+        0x4E => (LSR, Absolute),
+        0x5E => (LSR, AbsoluteX),
 
         0x2A => (ROL, Implied),
         0x26 => (ROL, ZeroPage),

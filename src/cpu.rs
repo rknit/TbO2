@@ -175,6 +175,42 @@ impl TbO2 {
                 self.check_nz(self.a);
             }
 
+            Inst::ASL => {
+                let mut data;
+                let send_carry;
+                if addr_mode == AddressingMode::Implied {
+                    data = self.a.data;
+                    send_carry = (data & 0b10000000) > 0;
+                    data <<= 1;
+                    self.a.data = data;
+                } else {
+                    let read = self.read_byte_addressed(addr_mode);
+                    data = read.1;
+                    send_carry = (data & 0b10000000) > 0;
+                    data <<= 1;
+                    self.write_byte(read.0, data);
+                }
+                self.check_nz(Register { data });
+                self.status.carry = send_carry;
+            }
+            Inst::LSR => {
+                let mut data;
+                let send_carry;
+                if addr_mode == AddressingMode::Implied {
+                    data = self.a.data;
+                    send_carry = (data & 0b1) > 0;
+                    data >>= 1;
+                    self.a.data = data;
+                } else {
+                    let read = self.read_byte_addressed(addr_mode);
+                    data = read.1;
+                    send_carry = (data & 0b1) > 0;
+                    data >>= 1;
+                    self.write_byte(read.0, data);
+                };
+                self.check_nz(Register { data });
+                self.status.carry = send_carry;
+            }
             Inst::ROL => {
                 let mut data;
                 let send_carry;
