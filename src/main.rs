@@ -1,4 +1,4 @@
-use cpu::TbO2;
+use cpu::CPU;
 use mem::{RAM, ROM};
 
 #[allow(dead_code)]
@@ -8,7 +8,7 @@ pub mod layout;
 pub mod mem;
 
 fn main() {
-    let mut cpu = TbO2::new();
+    let mut cpu = CPU::new();
 
     let mut ram = RAM::<0x8000>::new();
     ram.load_bytes(0x0, &[0xA9, 12, 0x38, 0xE9, 9, 0x85, 0x07]);

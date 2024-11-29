@@ -5,7 +5,7 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct TbO2 {
+pub struct CPU {
     pc: u16,
     sp: u8,
     a: Register,
@@ -14,7 +14,7 @@ pub struct TbO2 {
     status: Status,
     layout: Layout,
 }
-impl TbO2 {
+impl CPU {
     pub fn new() -> Self {
         Self {
             pc: 0,
@@ -43,6 +43,23 @@ impl TbO2 {
         println!("Setting stack pointer to {:#06x}...", self.get_sp());
         self.pc = self.read_word(0xFFFC);
         println!("Starting execution at {:#06x}...", self.pc);
+    }
+
+    pub fn irq(&mut self) {
+        if self.status.int_disable {
+            return;
+        }
+        self.push_byte((self.pc >> 8) as u8);
+        self.push_byte((self.pc & 0xFF) as u8);
+        self.push_byte(self.status.into());
+        self.pc = self.read_word(0xFFFA);
+    }
+
+    pub fn nmi(&mut self) {
+        self.push_byte((self.pc >> 8) as u8);
+        self.push_byte((self.pc & 0xFF) as u8);
+        self.push_byte(self.status.into());
+        self.pc = self.read_word(0xFFFE);
     }
 
     pub fn step(&mut self) -> Result<(), ExecutionError> {
@@ -254,11 +271,11 @@ impl TbO2 {
 
             Inst::CLC => self.status.carry = false,
             Inst::CLD => self.status.decimal = false,
-            Inst::CLI => self.status.interrupt = false,
+            Inst::CLI => self.status.int_disable = false,
             Inst::CLV => self.status.overflow = false,
             Inst::SEC => self.status.carry = true,
             Inst::SED => self.status.decimal = true,
-            Inst::SEI => self.status.interrupt = true,
+            Inst::SEI => self.status.int_disable = true,
 
             Inst::CMP => {
                 let operand = self.read_byte_addressed(addr_mode).1;
@@ -491,7 +508,7 @@ struct Status {
     overflow: bool,
     break_: bool,
     decimal: bool,
-    interrupt: bool,
+    int_disable: bool,
     zero: bool,
     carry: bool,
 }
@@ -502,7 +519,7 @@ impl Into<u8> for Status {
             | (1 << 5)
             | (1 << 4)
             | (self.decimal as u8) << 3
-            | (self.interrupt as u8) << 2
+            | (self.int_disable as u8) << 2
             | (self.zero as u8) << 1
             | (self.carry as u8)
     }
@@ -514,7 +531,7 @@ impl From<u8> for Status {
             overflow: (value & 0b1000000) > 0,
             break_: false,
             decimal: (value & 0b1000) > 0,
-            interrupt: (value & 0b100) > 0,
+            int_disable: (value & 0b100) > 0,
             zero: (value & 0b10) > 0,
             carry: (value & 0b1) > 0,
         }
