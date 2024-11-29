@@ -30,6 +30,10 @@ pub enum Inst {
     ADC,
     SBC,
 
+    AND,
+    EOR,
+    ORA,
+
     ROL,
     ROR,
 }
@@ -133,6 +137,33 @@ pub fn decode_inst(byte: u8) -> Option<(Inst, AddressingMode)> {
         0xF9 => (SBC, AbsoluteY),
         0xE1 => (SBC, XIndirect),
         0xF1 => (SBC, IndirectY),
+
+        0x29 => (AND, Immediate),
+        0x25 => (AND, ZeroPage),
+        0x35 => (AND, ZeroPageX),
+        0x2D => (AND, Absolute),
+        0x3D => (AND, AbsoluteX),
+        0x39 => (AND, AbsoluteY),
+        0x21 => (AND, XIndirect),
+        0x31 => (AND, IndirectY),
+
+        0x49 => (EOR, Immediate),
+        0x45 => (EOR, ZeroPage),
+        0x55 => (EOR, ZeroPageX),
+        0x4D => (EOR, Absolute),
+        0x5D => (EOR, AbsoluteX),
+        0x59 => (EOR, AbsoluteY),
+        0x41 => (EOR, XIndirect),
+        0x51 => (EOR, IndirectY),
+
+        0x09 => (ORA, Immediate),
+        0x05 => (ORA, ZeroPage),
+        0x15 => (ORA, ZeroPageX),
+        0x0D => (ORA, Absolute),
+        0x1D => (ORA, AbsoluteX),
+        0x19 => (ORA, AbsoluteY),
+        0x01 => (ORA, XIndirect),
+        0x11 => (ORA, IndirectY),
 
         0x2A => (ROL, Implied),
         0x26 => (ROL, ZeroPage),

@@ -159,6 +159,22 @@ impl TbO2 {
                 self.check_nz(self.a);
             }
 
+            Inst::AND => {
+                let data = self.read_byte_addressed(addr_mode).1;
+                self.a.data &= data;
+                self.check_nz(self.a);
+            }
+            Inst::EOR => {
+                let data = self.read_byte_addressed(addr_mode).1;
+                self.a.data ^= data;
+                self.check_nz(self.a);
+            }
+            Inst::ORA => {
+                let data = self.read_byte_addressed(addr_mode).1;
+                self.a.data |= data;
+                self.check_nz(self.a);
+            }
+
             Inst::ROL => {
                 let mut data;
                 let send_carry;
