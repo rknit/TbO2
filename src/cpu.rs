@@ -367,6 +367,15 @@ impl CPU {
                 let hi_pc = self.pull_byte() as u16;
                 self.pc = (hi_pc << 8) | lo_pc;
             }
+
+            Inst::BIT => {
+                let data = self.read_byte_addressed(addr_mode).1;
+                self.status.zero = (self.a.data & data) == 0;
+                self.status.negative = (data & 0b10000000) > 0;
+                self.status.overflow = (data & 0b1000000) > 0;
+            }
+
+            Inst::NOP => (),
         };
 
         Ok(())

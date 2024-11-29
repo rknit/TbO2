@@ -66,6 +66,10 @@ pub enum Inst {
 
     BRK,
     RTI,
+
+    BIT,
+
+    NOP,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -260,6 +264,11 @@ pub fn decode_inst(byte: u8) -> Option<(Inst, AddressingMode)> {
 
         0x00 => (BRK, Implied),
         0x40 => (RTI, Implied),
+
+        0x24 => (BIT, ZeroPage),
+        0x2C => (BIT, Absolute),
+
+        0xEA => (NOP, Implied),
 
         _ => return None,
     })
