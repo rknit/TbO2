@@ -278,6 +278,39 @@ impl TbO2 {
                 self.check_nz(Register { data: result });
                 self.status.carry = self.y.data >= operand;
             }
+
+            Inst::BCC | Inst::BCS => {
+                let offset = self.read_byte_relative();
+                if (!self.status.carry && inst == Inst::BCC)
+                    || (self.status.carry && inst == Inst::BCS)
+                {
+                    self.pc = (self.pc as i32 + offset as i32) as u16;
+                }
+            }
+            Inst::BEQ | Inst::BNE => {
+                let offset = self.read_byte_relative();
+                if (!self.status.zero && inst == Inst::BNE)
+                    || (self.status.zero && inst == Inst::BEQ)
+                {
+                    self.pc = (self.pc as i32 + offset as i32) as u16;
+                }
+            }
+            Inst::BMI | Inst::BPL => {
+                let offset = self.read_byte_relative();
+                if (!self.status.negative && inst == Inst::BPL)
+                    || (self.status.negative && inst == Inst::BMI)
+                {
+                    self.pc = (self.pc as i32 + offset as i32) as u16;
+                }
+            }
+            Inst::BVC | Inst::BVS => {
+                let offset = self.read_byte_relative();
+                if (!self.status.overflow && inst == Inst::BVC)
+                    || (self.status.overflow && inst == Inst::BVS)
+                {
+                    self.pc = (self.pc as i32 + offset as i32) as u16;
+                }
+            }
         };
 
         Ok(())
@@ -300,6 +333,10 @@ impl TbO2 {
 
     fn get_sp(&self) -> u16 {
         self.sp as u16 + 0x100
+    }
+
+    fn read_byte_relative(&mut self) -> i8 {
+        self.next_byte() as i8
     }
 
     fn read_byte_addressed(&mut self, addr_mode: AddressingMode) -> (u16, u8) {

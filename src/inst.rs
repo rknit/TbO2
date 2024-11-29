@@ -50,6 +50,15 @@ pub enum Inst {
     CMP,
     CPX,
     CPY,
+
+    BCC,
+    BCS,
+    BEQ,
+    BNE,
+    BMI,
+    BPL,
+    BVC,
+    BVS,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -227,6 +236,15 @@ pub fn decode_inst(byte: u8) -> Option<(Inst, AddressingMode)> {
         0xC0 => (CPY, Immediate),
         0xC4 => (CPY, ZeroPage),
         0xCC => (CPY, Absolute),
+
+        0x90 => (BCC, Relative),
+        0xB0 => (BCS, Relative),
+        0xF0 => (BEQ, Relative),
+        0xD0 => (BNE, Relative),
+        0x30 => (BMI, Relative),
+        0x10 => (BPL, Relative),
+        0x50 => (BVC, Relative),
+        0x70 => (BVS, Relative),
 
         _ => return None,
     })
