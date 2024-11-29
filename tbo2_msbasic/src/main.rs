@@ -1,18 +1,12 @@
-use std::{
-    fs,
-    io::{stdout, Write},
-};
+use std::{collections::VecDeque, fs, io::stdin, time::Duration};
 
 use tbo2::{
     cpu::CPU,
     mem::{RAM, ROM},
 };
-use termion::{async_stdin, event::Key, input::TermRead, raw::IntoRawMode};
 
 fn main() {
-    let mut stdin = async_stdin().keys();
-    let mut stdout = stdout().into_raw_mode().unwrap();
-    stdout.flush().unwrap();
+    let stdin = stdin();
 
     let mut rom = ROM::<0x8000>::new();
     let image = fs::read("asm/a.out").expect("temporary binary file");
@@ -28,49 +22,43 @@ fn main() {
 
     cpu.reset();
 
-    loop {
-        const CHR_DATA: u16 = 0x5000;
-        const CHR_MODE: u16 = 0x5001;
-        const CHR_REQ: u16 = 0x5002;
+    const CHR_DATA: u16 = 0x5000;
+    const CHR_MODE: u16 = 0x5001;
+    const CHR_REQ: u16 = 0x5002;
 
+    let mut buffer = VecDeque::<char>::new();
+
+    loop {
         if cpu.read_byte(CHR_REQ) == 1 {
-            let mode = cpu.read_byte(CHR_MODE);
-            match mode {
+            match cpu.read_byte(CHR_MODE) {
                 0 => {
-                    let mut c = (cpu.read_byte(CHR_DATA) as char).to_string();
-                    if c == "\r" {
-                        c += "\n";
-                    }
-                    write!(stdout, "{}", c).unwrap();
-                    stdout.lock().flush().unwrap();
-                    cpu.write_byte(CHR_REQ, 0);
+                    let c = cpu.read_byte(CHR_DATA) as char;
+                    print!("{}", c);
                 }
                 1 => {
-                    if let Some(Ok(key)) = stdin.next() {
-                        match key {
-                            Key::Char(mut c) => {
-                                if c == '\n' {
-                                    c = '\r';
-                                }
-                                cpu.write_byte(CHR_DATA, c as u8);
-                                cpu.write_byte(CHR_REQ, 0);
+                    if buffer.is_empty() {
+                        let mut s = String::new();
+                        stdin.read_line(&mut s).unwrap();
+                        s.chars().for_each(|mut c| {
+                            if c == '\n' {
+                                c = '\r';
                             }
-                            Key::Backspace => {
-                                cpu.write_byte(CHR_DATA, 0x8);
-                                cpu.write_byte(CHR_REQ, 0);
-                            }
-                            Key::Ctrl('d' | 'c') => break,
-                            _ => (),
-                        };
+                            buffer.push_back(c)
+                        });
                     }
+
+                    cpu.write_byte(CHR_DATA, buffer.pop_front().unwrap() as u8);
                 }
-                _ => panic!("invalid CHR_MODE"),
-            };
+                _ => unimplemented!(),
+            }
+            cpu.write_byte(CHR_REQ, 0);
         }
 
         if let Err(e) = cpu.step() {
             eprintln!("Error: {:#04x?}", e);
             break;
         }
+
+        std::thread::sleep(Duration::from_micros(100));
     }
 }

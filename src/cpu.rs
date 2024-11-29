@@ -6,7 +6,7 @@ use crate::{
 
 #[derive(Debug)]
 pub struct CPU {
-    pub pc: u16,
+    pc: u16,
     sp: u8,
     a: Register,
     x: Register,
@@ -68,7 +68,7 @@ impl CPU {
         let Some((inst, addr_mode)) = decode_inst(inst_byte) else {
             return Err(ExecutionError::UnknownInst(inst_byte));
         };
-        //println!("{:#06x} {:?} {:?}", prev_pc, inst, addr_mode);
+        //println!("{:#06x} {:?} {:?}", self.pc, inst, addr_mode);
 
         match inst {
             Inst::LDA => {
@@ -163,26 +163,25 @@ impl CPU {
 
             Inst::ADC => {
                 let operand = self.read_byte_addressed(addr_mode).1 as u16;
-                let carry = self.status.carry as u16;
-                let result = self.a.data as u16 + operand + carry;
+                let result = (self.a.data as u16)
+                    .wrapping_add(operand)
+                    .wrapping_add(self.status.carry as u16);
 
                 self.status.carry = result > 0xFF;
                 self.status.overflow =
-                    (self.a.data & operand as u8 & (self.a.data ^ result as u8) & 0x80) > 0;
+                    ((result ^ self.a.data as u16) & (result ^ operand) & 0x80) > 0;
                 self.a.data = result as u8;
                 self.check_nz(self.a);
             }
             Inst::SBC => {
                 let operand = self.read_byte_addressed(addr_mode).1 as u16;
-                let operand = !operand; // invert operand to get -operand - 1, then we can use adc
-                let carry = self.status.carry as u16;
                 let result = (self.a.data as u16)
-                    .wrapping_add(operand)
-                    .wrapping_add(carry);
+                    .wrapping_add(operand ^ 0xFF) // invert operand to get -operand - 1, then we can use adc
+                    .wrapping_add(self.status.carry as u16);
 
                 self.status.carry = result > 0xFF;
                 self.status.overflow =
-                    (self.a.data & operand as u8 & (self.a.data ^ result as u8) & 0x80) > 0;
+                    ((result ^ self.a.data as u16) & (result ^ operand) & 0x80) > 0;
                 self.a.data = result as u8;
                 self.check_nz(self.a);
             }
@@ -307,35 +306,54 @@ impl CPU {
                 self.status.carry = self.y.data >= operand;
             }
 
-            Inst::BCC | Inst::BCS => {
+            Inst::BCC => {
                 let offset = self.read_byte_relative();
-                if (!self.status.carry && inst == Inst::BCC)
-                    || (self.status.carry && inst == Inst::BCS)
-                {
+                if !self.status.carry {
                     self.pc = (self.pc as i32 + offset as i32) as u16;
                 }
             }
-            Inst::BEQ | Inst::BNE => {
+            Inst::BCS => {
                 let offset = self.read_byte_relative();
-                if (!self.status.zero && inst == Inst::BNE)
-                    || (self.status.zero && inst == Inst::BEQ)
-                {
+                if self.status.carry {
                     self.pc = (self.pc as i32 + offset as i32) as u16;
                 }
             }
-            Inst::BMI | Inst::BPL => {
+
+            Inst::BNE => {
                 let offset = self.read_byte_relative();
-                if (!self.status.negative && inst == Inst::BPL)
-                    || (self.status.negative && inst == Inst::BMI)
-                {
+                if !self.status.zero {
                     self.pc = (self.pc as i32 + offset as i32) as u16;
                 }
             }
-            Inst::BVC | Inst::BVS => {
+            Inst::BEQ => {
                 let offset = self.read_byte_relative();
-                if (!self.status.overflow && inst == Inst::BVC)
-                    || (self.status.overflow && inst == Inst::BVS)
-                {
+                if self.status.zero {
+                    self.pc = (self.pc as i32 + offset as i32) as u16;
+                }
+            }
+
+            Inst::BPL => {
+                let offset = self.read_byte_relative();
+                if !self.status.negative {
+                    self.pc = (self.pc as i32 + offset as i32) as u16;
+                }
+            }
+            Inst::BMI => {
+                let offset = self.read_byte_relative();
+                if self.status.negative {
+                    self.pc = (self.pc as i32 + offset as i32) as u16;
+                }
+            }
+
+            Inst::BVC => {
+                let offset = self.read_byte_relative();
+                if !self.status.overflow {
+                    self.pc = (self.pc as i32 + offset as i32) as u16;
+                }
+            }
+            Inst::BVS => {
+                let offset = self.read_byte_relative();
+                if self.status.overflow {
                     self.pc = (self.pc as i32 + offset as i32) as u16;
                 }
             }
@@ -365,9 +383,10 @@ impl CPU {
                 let pc2 = self.pc + 2;
                 self.push_byte((pc2 >> 8) as u8);
                 self.push_byte((pc2 & 0xFF) as u8);
-                self.push_byte(self.status.into());
+                let mut status = self.status;
+                status.break_ = true;
+                self.push_byte(status.into());
                 self.pc = self.read_word(0xFFFE);
-                self.status.break_ = true;
                 self.status.int_disable = true;
             }
             Inst::RTI => {
@@ -397,11 +416,11 @@ impl CPU {
 
     fn push_byte(&mut self, data: u8) {
         self.write_byte(self.get_sp(), data);
-        self.sp -= 1;
+        self.sp = self.sp.wrapping_sub(1);
     }
 
     fn pull_byte(&mut self) -> u8 {
-        self.sp += 1;
+        self.sp = self.sp.wrapping_add(1);
         self.read_byte(self.get_sp())
     }
 
