@@ -46,6 +46,10 @@ pub enum Inst {
     SEC,
     SED,
     SEI,
+
+    CMP,
+    CPX,
+    CPY,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -206,6 +210,23 @@ pub fn decode_inst(byte: u8) -> Option<(Inst, AddressingMode)> {
         0x38 => (SEC, Implied),
         0xF8 => (SED, Implied),
         0x78 => (SEI, Implied),
+
+        0xC9 => (CMP, Immediate),
+        0xC5 => (CMP, ZeroPage),
+        0xD5 => (CMP, ZeroPageX),
+        0xCD => (CMP, Absolute),
+        0xDD => (CMP, AbsoluteX),
+        0xD9 => (CMP, AbsoluteY),
+        0xC1 => (CMP, XIndirect),
+        0xD1 => (CMP, IndirectY),
+
+        0xE0 => (CPX, Immediate),
+        0xE4 => (CPX, ZeroPage),
+        0xEC => (CPX, Absolute),
+
+        0xC0 => (CPY, Immediate),
+        0xC4 => (CPY, ZeroPage),
+        0xCC => (CPY, Absolute),
 
         _ => return None,
     })

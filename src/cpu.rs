@@ -259,6 +259,25 @@ impl TbO2 {
             Inst::SEC => self.status.carry = true,
             Inst::SED => self.status.decimal = true,
             Inst::SEI => self.status.interrupt = true,
+
+            Inst::CMP => {
+                let operand = self.read_byte_addressed(addr_mode).1;
+                let result = self.a.data - operand;
+                self.check_nz(Register { data: result });
+                self.status.carry = self.a.data >= operand;
+            }
+            Inst::CPX => {
+                let operand = self.read_byte_addressed(addr_mode).1;
+                let result = self.x.data - operand;
+                self.check_nz(Register { data: result });
+                self.status.carry = self.x.data >= operand;
+            }
+            Inst::CPY => {
+                let operand = self.read_byte_addressed(addr_mode).1;
+                let result = self.y.data - operand;
+                self.check_nz(Register { data: result });
+                self.status.carry = self.y.data >= operand;
+            }
         };
 
         Ok(())
