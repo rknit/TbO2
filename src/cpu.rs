@@ -104,6 +104,35 @@ impl TbO2 {
                 self.status = Status::from(self.pull_byte());
             }
 
+            Inst::DEC => {
+                let (addr, mut data) = self.read_byte_addressed(addr_mode);
+                data -= 1;
+                self.write_byte(addr, data);
+                self.check_nz(Register { data });
+            }
+            Inst::DEX => {
+                self.x.data -= 1;
+                self.check_nz(self.x);
+            }
+            Inst::DEY => {
+                self.y.data -= 1;
+                self.check_nz(self.y);
+            }
+            Inst::INC => {
+                let (addr, mut data) = self.read_byte_addressed(addr_mode);
+                data += 1;
+                self.write_byte(addr, data);
+                self.check_nz(Register { data });
+            }
+            Inst::INX => {
+                self.x.data += 1;
+                self.check_nz(self.x);
+            }
+            Inst::INY => {
+                self.y.data += 1;
+                self.check_nz(self.y);
+            }
+
             Inst::ROL => {
                 let mut data;
                 let send_carry;

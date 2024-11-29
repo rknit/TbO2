@@ -20,6 +20,13 @@ pub enum Inst {
     PLA,
     PLP,
 
+    DEC,
+    DEX,
+    DEY,
+    INC,
+    INX,
+    INY,
+
     ROL,
     ROR,
 }
@@ -92,6 +99,19 @@ pub fn decode_inst(byte: u8) -> Option<(Inst, AddressingMode)> {
         0x08 => (PHP, Implied),
         0x68 => (PLA, Implied),
         0x28 => (PLP, Implied),
+
+        0xC6 => (DEC, ZeroPage),
+        0xD6 => (DEC, ZeroPageX),
+        0xCE => (DEC, Absolute),
+        0xDE => (DEC, AbsoluteX),
+        0xCA => (DEX, Implied),
+        0x88 => (DEY, Implied),
+        0xE6 => (INC, ZeroPage),
+        0xF6 => (INC, ZeroPageX),
+        0xEE => (INC, Absolute),
+        0xFE => (INC, AbsoluteX),
+        0xE8 => (INX, Implied),
+        0xC8 => (INY, Implied),
 
         0x2A => (ROL, Implied),
         0x26 => (ROL, ZeroPage),
