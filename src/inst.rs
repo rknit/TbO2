@@ -63,6 +63,9 @@ pub enum Inst {
     JMP,
     JSR,
     RTS,
+
+    BRK,
+    RTI,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -254,6 +257,9 @@ pub fn decode_inst(byte: u8) -> Option<(Inst, AddressingMode)> {
         0x6C => (JMP, Indirect),
         0x20 => (JSR, Absolute),
         0x60 => (RTS, Implied),
+
+        0x00 => (BRK, Implied),
+        0x40 => (RTI, Implied),
 
         _ => return None,
     })

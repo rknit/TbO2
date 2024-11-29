@@ -53,6 +53,7 @@ impl CPU {
         self.push_byte((self.pc & 0xFF) as u8);
         self.push_byte(self.status.into());
         self.pc = self.read_word(0xFFFA);
+        self.status.int_disable = true;
     }
 
     pub fn nmi(&mut self) {
@@ -60,6 +61,7 @@ impl CPU {
         self.push_byte((self.pc & 0xFF) as u8);
         self.push_byte(self.status.into());
         self.pc = self.read_word(0xFFFE);
+        self.status.int_disable = true;
     }
 
     pub fn step(&mut self) -> Result<(), ExecutionError> {
@@ -345,6 +347,22 @@ impl CPU {
                 self.pc = self.next_word();
             }
             Inst::RTS => {
+                let lo_pc = self.pull_byte() as u16;
+                let hi_pc = self.pull_byte() as u16;
+                self.pc = (hi_pc << 8) | lo_pc;
+            }
+
+            Inst::BRK => {
+                let pc2 = self.pc + 2;
+                self.push_byte((pc2 >> 8) as u8);
+                self.push_byte((pc2 & 0xFF) as u8);
+                self.push_byte(self.status.into());
+                self.pc = self.read_word(0xFFFE);
+                self.status.break_ = true;
+                self.status.int_disable = true;
+            }
+            Inst::RTI => {
+                self.status = Status::from(self.pull_byte());
                 let lo_pc = self.pull_byte() as u16;
                 let hi_pc = self.pull_byte() as u16;
                 self.pc = (hi_pc << 8) | lo_pc;
