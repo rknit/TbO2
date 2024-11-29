@@ -64,6 +64,9 @@ impl TbO2 {
                 self.y.data = self.read_byte_addressed(addr_mode);
                 self.check_nz(self.y);
             }
+            Inst::STA => self.write_byte_addressed(self.a.data, addr_mode),
+            Inst::STX => self.write_byte_addressed(self.x.data, addr_mode),
+            Inst::STY => self.write_byte_addressed(self.y.data, addr_mode),
         };
 
         Ok(())
@@ -113,6 +116,49 @@ impl TbO2 {
             AddressingMode::ZeroPageY => {
                 let indexed = self.next_byte() + self.y.data;
                 self.read_byte(indexed as u16)
+            }
+        }
+    }
+
+    fn write_byte_addressed(&mut self, byte: u8, addr_mode: AddressingMode) {
+        match addr_mode {
+            AddressingMode::Implied => unimplemented!("Implied addressing mode"),
+            AddressingMode::Immediate => unimplemented!("Immediate addressing mode"),
+            AddressingMode::Absolute => {
+                let addr = self.next_word();
+                self.write_byte(addr, byte);
+            }
+            AddressingMode::AbsoluteX => {
+                let addr = self.next_word() + self.x.data as u16;
+                self.write_byte(addr, byte);
+            }
+            AddressingMode::AbsoluteY => {
+                let addr = self.next_word() + self.y.data as u16;
+                self.write_byte(addr, byte);
+            }
+            AddressingMode::Indirect => unimplemented!("Indirect addressing mode"),
+            AddressingMode::XIndirect => {
+                let indexed = self.next_byte() + self.x.data;
+                let addr = self.read_word(indexed as u16);
+                self.write_byte(addr, byte);
+            }
+            AddressingMode::IndirectY => {
+                let zp_addr = self.next_byte() as u16;
+                let indexed = self.read_word(zp_addr) + self.y.data as u16;
+                self.write_byte(indexed, byte);
+            }
+            AddressingMode::Relative => unimplemented!("Relative addressing mode"),
+            AddressingMode::ZeroPage => {
+                let zp_addr = self.next_byte() as u16;
+                self.write_byte(zp_addr, byte);
+            }
+            AddressingMode::ZeroPageX => {
+                let indexed = self.next_byte() + self.x.data;
+                self.write_byte(indexed as u16, byte);
+            }
+            AddressingMode::ZeroPageY => {
+                let indexed = self.next_byte() + self.y.data;
+                self.write_byte(indexed as u16, byte);
             }
         }
     }
