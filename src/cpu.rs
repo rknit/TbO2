@@ -6,7 +6,7 @@ use crate::{
 
 #[derive(Debug)]
 pub struct CPU {
-    pc: u16,
+    pub pc: u16,
     sp: u8,
     a: Register,
     x: Register,
@@ -72,7 +72,7 @@ impl CPU {
         let Some((inst, addr_mode)) = decode_inst(inst_byte) else {
             return Err(ExecutionError::UnknownInst(inst_byte));
         };
-        //println!("{:#06x} {:?} {:?}", self.pc, inst, addr_mode);
+        //println!("{:#06x} {:?} {:?}\r", self.pc, inst, addr_mode);
 
         match inst {
             Inst::LDA => {
@@ -138,26 +138,26 @@ impl CPU {
 
             Inst::DEC => {
                 if addr_mode == AddressingMode::Implied {
-                    self.a.data -= 1;
+                    self.a.data = self.a.data.wrapping_sub(1);
                     self.check_nz(self.a);
                 } else {
                     let (addr, mut data) = self.read_byte_addressed(addr_mode);
-                    data -= 1;
+                    data = data.wrapping_sub(1);
                     self.write_byte(addr, data);
                     self.check_nz(Register { data });
                 }
             }
             Inst::DEX => {
-                self.x.data -= 1;
+                self.x.data = self.x.data.wrapping_sub(1);
                 self.check_nz(self.x);
             }
             Inst::DEY => {
-                self.y.data -= 1;
+                self.y.data = self.y.data.wrapping_sub(1);
                 self.check_nz(self.y);
             }
             Inst::INC => {
                 if addr_mode == AddressingMode::Implied {
-                    self.a.data += 1;
+                    self.a.data = self.a.data.wrapping_add(1);
                     self.check_nz(self.a);
                 } else {
                     let (addr, mut data) = self.read_byte_addressed(addr_mode);
@@ -188,14 +188,14 @@ impl CPU {
                 self.check_nz(self.a);
             }
             Inst::SBC => {
-                let operand = self.read_byte_addressed(addr_mode).1 as u16;
+                let operand = self.read_byte_addressed(addr_mode).1;
                 let result = (self.a.data as u16)
-                    .wrapping_add(operand ^ 0xFF) // invert operand to get -operand - 1, then we can use adc
+                    .wrapping_add((operand ^ 0xFF) as u16) // invert operand to get -operand - 1
                     .wrapping_add(self.status.carry as u16);
 
                 self.status.carry = result > 0xFF;
                 self.status.overflow =
-                    ((result ^ self.a.data as u16) & (result ^ operand) & 0x80) > 0;
+                    ((result ^ self.a.data as u16) & (result ^ (operand as u16)) & 0x80) > 0;
                 self.a.data = result as u8;
                 self.check_nz(self.a);
             }
@@ -309,15 +309,20 @@ impl CPU {
             }
             Inst::CPX => {
                 let operand = self.read_byte_addressed(addr_mode).1;
-                let result = self.x.data - operand;
+                let result = self.x.data.wrapping_sub(operand);
                 self.check_nz(Register { data: result });
                 self.status.carry = self.x.data >= operand;
             }
             Inst::CPY => {
                 let operand = self.read_byte_addressed(addr_mode).1;
-                let result = self.y.data - operand;
+                let result = self.y.data.wrapping_sub(operand);
                 self.check_nz(Register { data: result });
                 self.status.carry = self.y.data >= operand;
+            }
+
+            Inst::BRA => {
+                let offset = self.read_byte_relative();
+                self.pc = (self.pc as i32 + offset as i32) as u16;
             }
 
             Inst::BCC => {
@@ -394,7 +399,7 @@ impl CPU {
             }
 
             Inst::BRK => {
-                let pc_next = self.pc + 1;
+                let pc_next = self.pc + 2;
                 self.push_byte((pc_next >> 8) as u8);
                 self.push_byte((pc_next & 0xFF) as u8);
                 let mut status = self.status;
@@ -464,7 +469,7 @@ impl CPU {
             }
             AddressingMode::Indirect => unimplemented!("Indirect addressing mode"),
             AddressingMode::XIndirect => {
-                let indexed = self.next_byte() + self.x.data;
+                let indexed = self.next_byte().wrapping_add(self.x.data);
                 let addr = self.read_word(indexed as u16);
                 (addr, self.read_byte(addr))
             }
@@ -479,11 +484,11 @@ impl CPU {
                 (addr, self.read_byte(addr))
             }
             AddressingMode::ZeroPageX => {
-                let addr = (self.next_byte() + self.x.data) as u16;
+                let addr = (self.next_byte().wrapping_add(self.x.data)) as u16;
                 (addr, self.read_byte(addr))
             }
             AddressingMode::ZeroPageY => {
-                let addr = (self.next_byte() + self.y.data) as u16;
+                let addr = (self.next_byte().wrapping_add(self.y.data)) as u16;
                 (addr, self.read_byte(addr))
             }
         }
@@ -507,7 +512,7 @@ impl CPU {
             }
             AddressingMode::Indirect => unimplemented!("Indirect addressing mode"),
             AddressingMode::XIndirect => {
-                let indexed = self.next_byte() + self.x.data;
+                let indexed = self.next_byte().wrapping_add(self.x.data);
                 let addr = self.read_word(indexed as u16);
                 self.write_byte(addr, data);
             }
@@ -522,11 +527,11 @@ impl CPU {
                 self.write_byte(zp_addr, data);
             }
             AddressingMode::ZeroPageX => {
-                let indexed = self.next_byte() + self.x.data;
+                let indexed = self.next_byte().wrapping_add(self.x.data);
                 self.write_byte(indexed as u16, data);
             }
             AddressingMode::ZeroPageY => {
-                let indexed = self.next_byte() + self.y.data;
+                let indexed = self.next_byte().wrapping_add(self.y.data);
                 self.write_byte(indexed as u16, data);
             }
         }

@@ -13,10 +13,20 @@ INPUT_BUFFER:     .res $100
 CHR_DATA        = $5000
 CHR_ACK         = $5001
 
+LOAD:             
+                  rts
+
+SAVE:             
+                  rts
+
+ISCNTC:             
+                  rts
+
 ; Check whether there is a key pressed.
 ; If there are, load the character to A reg,
 ; and set the carry bit.
 ; Modifies: A, flags
+MONRDKEY:
 CHRIN:
                   phx
                   jsr       BUFFER_SIZE
@@ -33,6 +43,7 @@ CHRIN:
 
 ; Output a charater from A register to CHR_DATA
 ; Modifies: flags
+MONCOUT:
 CHROUT:
                   pha
                   sta       CHR_DATA

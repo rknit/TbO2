@@ -1,0 +1,3 @@
+[submodule "tbo2_msbasic/tbo2_msbasic/msbasic"]
+	path = tbo2_msbasic/tbo2_msbasic/msbasic
+	url = https://github.com/mist64/msbasic

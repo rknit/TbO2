@@ -2,8 +2,10 @@
 
 set -e
 
-ca65 ./bios.s
+cd ../msbasic
 
-ld65 -C ./bios.cfg ./bios.o -o bios.bin -Ln bios.sym
+./make.sh
 
-rm ./bios.o
+cp ./tmp/tbo2.bin ../asm/tbo2.bin
+
+cd ../asm

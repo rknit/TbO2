@@ -55,6 +55,7 @@ pub enum Inst {
     CPX,
     CPY,
 
+    BRA,
     BCC,
     BCS,
     BEQ,
@@ -258,6 +259,7 @@ pub fn decode_inst(byte: u8) -> Option<(Inst, AddressingMode)> {
         0xC4 => (CPY, ZeroPage),
         0xCC => (CPY, Absolute),
 
+        0x80 => (BRA, Relative),
         0x90 => (BCC, Relative),
         0xB0 => (BCS, Relative),
         0xF0 => (BEQ, Relative),
