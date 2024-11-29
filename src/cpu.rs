@@ -45,7 +45,6 @@ impl CPU {
 
     pub fn irq(&mut self) {
         if self.status.int_disable {
-            eprintln!("not pog\r");
             return;
         }
         self.push_byte((self.pc >> 8) as u8);

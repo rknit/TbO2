@@ -11,7 +11,7 @@ INPUT_BUFFER:     .res $100
 .segment "BIOS"
 
 CHR_DATA        = $5000
-CHR_STATUS      = $5001
+CHR_ACK         = $5001
 
 ; Check whether there is a key pressed.
 ; If there are, load the character to A reg,
@@ -37,8 +37,8 @@ CHROUT:
                   pha
                   sta       CHR_DATA
                   lda       #1
-                  sta       CHR_STATUS
-@wait_echo:       lda       CHR_STATUS
+                  sta       CHR_ACK
+@wait_echo:       lda       CHR_ACK
                   BNE       @wait_echo
                   pla
                   rts

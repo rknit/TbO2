@@ -25,7 +25,7 @@ fn main() {
     cpu.reset();
 
     const CHR_DATA: u16 = 0x5000;
-    const CHR_STATUS: u16 = 0x5001;
+    const CHR_ACK: u16 = 0x5001;
 
     loop {
         let timer_start = Instant::now();
@@ -39,10 +39,10 @@ fn main() {
             cpu.irq();
         }
 
-        if cpu.read_byte(CHR_STATUS) == 1 {
+        if cpu.read_byte(CHR_ACK) == 1 {
             let c = cpu.read_byte(CHR_DATA);
             print_char(&mut stdout, c as char);
-            cpu.write_byte(CHR_STATUS, 0);
+            cpu.write_byte(CHR_ACK, 0);
         }
 
         if let Err(e) = cpu.step() {
@@ -93,10 +93,10 @@ fn get_char(keys: &mut Keys<AsyncReader>) -> Option<char> {
 
 fn setup_mem(cpu: &mut CPU) {
     let mut rom = ROM::<0x8000>::new();
-    let image = fs::read("asm/bios.bin").expect("temporary binary file");
+    let image = fs::read("asm/bios.bin").expect("\r\ntemporary binary file\r\n");
     assert!(
         image.len() == 0x8000,
-        "image's size is not the exact size of ROM"
+        "\r\nimage's size is not the exact size of ROM\r\n"
     );
     rom.load_bytes(0, &image);
 
