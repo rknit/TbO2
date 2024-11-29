@@ -311,6 +311,27 @@ impl TbO2 {
                     self.pc = (self.pc as i32 + offset as i32) as u16;
                 }
             }
+
+            Inst::JMP => {
+                if addr_mode == AddressingMode::Indirect {
+                    let indirect = self.next_word();
+                    let addr = self.read_word(indirect);
+                    self.pc = addr;
+                } else {
+                    self.pc = self.next_word();
+                }
+            }
+            Inst::JSR => {
+                let ret_addr = self.pc + 2;
+                self.push_byte((ret_addr >> 8) as u8);
+                self.push_byte((ret_addr & 0xFF) as u8);
+                self.pc = self.next_word();
+            }
+            Inst::RTS => {
+                let lo_pc = self.pull_byte() as u16;
+                let hi_pc = self.pull_byte() as u16;
+                self.pc = (hi_pc << 8) | lo_pc;
+            }
         };
 
         Ok(())

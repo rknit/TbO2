@@ -59,6 +59,10 @@ pub enum Inst {
     BPL,
     BVC,
     BVS,
+
+    JMP,
+    JSR,
+    RTS,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -245,6 +249,11 @@ pub fn decode_inst(byte: u8) -> Option<(Inst, AddressingMode)> {
         0x10 => (BPL, Relative),
         0x50 => (BVC, Relative),
         0x70 => (BVS, Relative),
+
+        0x4C => (JMP, Absolute),
+        0x6C => (JMP, Indirect),
+        0x20 => (JSR, Absolute),
+        0x60 => (RTS, Implied),
 
         _ => return None,
     })
