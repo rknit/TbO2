@@ -12,12 +12,9 @@ MODE            = $2B                   ; $00=XAM, $7F=STOR, $AE=BLOCK XAM
 
 IN              = $0200                 ; Input buffer
 
-CHR_DATA        = $5000
-CHR_MODE        = $5001
-CHR_REQ         = $5002
-
 RESET:
                 CLD                     ; Clear decimal arithmetic mode.
+                JSR     INIT_BUFFER
                 CLI
                 LDY     #$7F            ; Fallthrough to ESCAPE
 
@@ -44,12 +41,8 @@ BACKSPACE:      DEY                     ; Back up text index.
                 BMI     GETLINE         ; Beyond start of line, reinitialize.
 
 NEXTCHAR:
-                LDA     #$01
-                STA     CHR_MODE        ; Set char mode to Poll Input
-                STA     CHR_REQ         ; Raise REQ to high
-@wait_char:     LDA     CHR_REQ
-                BNE     @wait_char      ; Loop until REQ is cleared
-                LDA     CHR_DATA
+                JSR     CHRIN
+                BCC     NEXTCHAR
                 STA     IN,Y            ; Add to text buffer.
                 CMP     #$0D            ; CR?
                 BNE     NOTCR           ; No.
@@ -182,18 +175,4 @@ PRHEX:
                 ADC     #$06            ; Add offset for letter.
 
 ECHO:
-                STA     CHR_DATA        ; Output character.
-                PHA                     ; Save A.
-                LDA     #$00            ; Set char mode to Display
-                STA     CHR_MODE        
-                INC
-                STA     CHR_REQ         ; Raise REQ to high
-@wait_echo:     LDA     CHR_REQ
-                BNE     @wait_echo      ; Loop until REQ is cleared
-                PLA                     ; Restore A.
-                RTS                     ; Return.              
-
-.segment "RESETVEC"
-                .word   $0F00          ; NMI vector
-                .word   RESET          ; RESET vector
-                .word   $0000          ; IRQ vector
+                JMP CHROUT

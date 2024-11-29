@@ -1,64 +1,107 @@
-use std::{collections::VecDeque, fs, io::stdin, time::Duration};
+use std::{
+    fs,
+    io::{self, Stdout, Write},
+    time::{Duration, Instant},
+};
 
 use tbo2::{
     cpu::CPU,
     mem::{RAM, ROM},
 };
+use termion::{
+    input::{Keys, TermRead},
+    raw::{IntoRawMode, RawTerminal},
+    AsyncReader,
+};
 
 fn main() {
-    let stdin = stdin();
+    const CLOCK_PERIOD_NANOS: u64 = 71; // 14 Mhz
 
+    let mut stdout = io::stdout().into_raw_mode().unwrap();
+    let mut keys = termion::async_stdin().keys();
+
+    let mut cpu = CPU::new();
+    setup_mem(&mut cpu);
+    cpu.reset();
+
+    const CHR_DATA: u16 = 0x5000;
+    const CHR_STATUS: u16 = 0x5001;
+
+    loop {
+        let timer_start = Instant::now();
+
+        if let Some(c) = get_char(&mut keys) {
+            if c == 0x4 as char {
+                break;
+            }
+
+            cpu.write_byte(CHR_DATA, c as u8);
+            cpu.write_byte(CHR_STATUS, 0x80);
+        } else {
+            cpu.write_byte(CHR_STATUS, 0x0);
+        }
+
+        let c = cpu.read_byte(CHR_DATA);
+        if c != 0 && cpu.read_byte(CHR_STATUS) != 0x80 {
+            print_char(&mut stdout, c as char);
+            cpu.write_byte(CHR_DATA, 0);
+        }
+
+        if let Err(e) = cpu.step() {
+            write!(stdout, "Error: {:#04x?}\r\n", e).unwrap();
+            stdout.flush().unwrap();
+            break;
+        }
+
+        while Instant::now().duration_since(timer_start) < Duration::from_nanos(CLOCK_PERIOD_NANOS)
+        {
+            continue;
+        }
+    }
+}
+
+fn print_char(stdout: &mut RawTerminal<Stdout>, c: char) {
+    if c == '\n' {
+        return;
+    }
+    write!(stdout, "{}", c).unwrap();
+    if c == '\r' {
+        write!(stdout, "\n").unwrap();
+    }
+    stdout.flush().unwrap();
+}
+
+fn get_char(keys: &mut Keys<AsyncReader>) -> Option<char> {
+    let Some(Ok(key)) = keys.next() else {
+        return None;
+    };
+    use termion::event::Key::*;
+    Some(match key {
+        Backspace => 0x8 as char,
+        Delete => 0x7F as char,
+        Char(c) => match c {
+            '\n' => '\r',
+            _ => c,
+        },
+        Ctrl(c) => match c {
+            'd' => 0x4 as char,
+            'c' => 0x3 as char,
+            _ => return None,
+        },
+        Esc => 0x1B as char,
+        _ => return None,
+    })
+}
+
+fn setup_mem(cpu: &mut CPU) {
     let mut rom = ROM::<0x8000>::new();
-    let image = fs::read("asm/a.out").expect("temporary binary file");
+    let image = fs::read("asm/bios.bin").expect("temporary binary file");
     assert!(
         image.len() == 0x8000,
         "image's size is not the exact size of ROM"
     );
     rom.load_bytes(0, &image);
 
-    let mut cpu = CPU::new();
-    cpu.set_region(0x0000, 0x7fff, Box::new(RAM::<0x8000>::new()));
+    cpu.set_region(0x0000, 0x7FFF, Box::new(RAM::<0x8000>::new()));
     cpu.set_region(0x8000, 0xFFFF, Box::new(rom));
-
-    cpu.reset();
-
-    const CHR_DATA: u16 = 0x5000;
-    const CHR_MODE: u16 = 0x5001;
-    const CHR_REQ: u16 = 0x5002;
-
-    let mut buffer = VecDeque::<char>::new();
-
-    loop {
-        if cpu.read_byte(CHR_REQ) == 1 {
-            match cpu.read_byte(CHR_MODE) {
-                0 => {
-                    let c = cpu.read_byte(CHR_DATA) as char;
-                    print!("{}", c);
-                }
-                1 => {
-                    if buffer.is_empty() {
-                        let mut s = String::new();
-                        stdin.read_line(&mut s).unwrap();
-                        s.chars().for_each(|mut c| {
-                            if c == '\n' {
-                                c = '\r';
-                            }
-                            buffer.push_back(c)
-                        });
-                    }
-
-                    cpu.write_byte(CHR_DATA, buffer.pop_front().unwrap() as u8);
-                }
-                _ => unimplemented!(),
-            }
-            cpu.write_byte(CHR_REQ, 0);
-        }
-
-        if let Err(e) = cpu.step() {
-            eprintln!("Error: {:#04x?}", e);
-            break;
-        }
-
-        std::thread::sleep(Duration::from_micros(100));
-    }
 }
