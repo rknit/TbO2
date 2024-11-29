@@ -515,13 +515,6 @@ impl CPU {
     fn write_byte(&mut self, addr: u16, data: u8) {
         self.layout.write_byte(addr as usize, data);
     }
-
-    fn write_word(&mut self, addr: u16, data: u16) {
-        let lo = (data & 0xFF) as u8;
-        let hi = ((data >> 8) & 0xFF) as u8;
-        self.layout.write_byte(addr as usize, lo);
-        self.layout.write_byte(addr as usize + 1, hi);
-    }
 }
 
 #[derive(Debug)]
