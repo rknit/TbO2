@@ -45,21 +45,26 @@ impl CPU {
 
     pub fn irq(&mut self) {
         if self.status.int_disable {
+            eprintln!("not pog\r");
             return;
         }
         self.push_byte((self.pc >> 8) as u8);
         self.push_byte((self.pc & 0xFF) as u8);
-        self.push_byte(self.status.into());
-        self.pc = self.read_word(0xFFFA);
+        let mut status = self.status;
+        status.break_ = false;
+        self.push_byte(status.into());
         self.status.int_disable = true;
+        self.pc = self.read_word(0xFFFE);
     }
 
     pub fn nmi(&mut self) {
         self.push_byte((self.pc >> 8) as u8);
         self.push_byte((self.pc & 0xFF) as u8);
-        self.push_byte(self.status.into());
-        self.pc = self.read_word(0xFFFE);
+        let mut status = self.status;
+        status.break_ = false;
+        self.push_byte(status.into());
         self.status.int_disable = true;
+        self.pc = self.read_word(0xFFFA);
     }
 
     pub fn step(&mut self) -> Result<(), ExecutionError> {
@@ -390,14 +395,14 @@ impl CPU {
             }
 
             Inst::BRK => {
-                let pc2 = self.pc + 2;
-                self.push_byte((pc2 >> 8) as u8);
-                self.push_byte((pc2 & 0xFF) as u8);
+                let pc_next = self.pc + 1;
+                self.push_byte((pc_next >> 8) as u8);
+                self.push_byte((pc_next & 0xFF) as u8);
                 let mut status = self.status;
                 status.break_ = true;
                 self.push_byte(status.into());
-                self.pc = self.read_word(0xFFFE);
                 self.status.int_disable = true;
+                self.pc = self.read_word(0xFFFE);
             }
             Inst::RTI => {
                 self.status = Status::from(self.pull_byte());

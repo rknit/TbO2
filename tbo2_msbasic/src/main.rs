@@ -36,15 +36,13 @@ fn main() {
             }
 
             cpu.write_byte(CHR_DATA, c as u8);
-            cpu.write_byte(CHR_STATUS, 0x80);
-        } else {
-            cpu.write_byte(CHR_STATUS, 0x0);
+            cpu.irq();
         }
 
-        let c = cpu.read_byte(CHR_DATA);
-        if c != 0 && cpu.read_byte(CHR_STATUS) != 0x80 {
+        if cpu.read_byte(CHR_STATUS) == 1 {
+            let c = cpu.read_byte(CHR_DATA);
             print_char(&mut stdout, c as char);
-            cpu.write_byte(CHR_DATA, 0);
+            cpu.write_byte(CHR_STATUS, 0);
         }
 
         if let Err(e) = cpu.step() {

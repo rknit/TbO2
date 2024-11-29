@@ -36,9 +36,10 @@ CHRIN:
 CHROUT:
                   pha
                   sta       CHR_DATA
-                  lda       #$FF
-@txdelay:         dec
-                  bne       @txdelay
+                  lda       #1
+                  sta       CHR_STATUS
+@wait_echo:       lda       CHR_STATUS
+                  BNE       @wait_echo
                   pla
                   rts
 
