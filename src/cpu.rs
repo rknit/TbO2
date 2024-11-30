@@ -18,6 +18,7 @@ pub struct CPU {
     status: Status,
     layout: Layout,
 
+    debug_pc: u16,
     debug_operand: DebugOp,
     debug_desc: DebugDesc,
 }
@@ -31,6 +32,7 @@ impl CPU {
             y: Default::default(),
             status: Status::default(),
             layout: Layout::new(u16::max_value() as usize + 1),
+            debug_pc: 0,
             debug_operand: DebugOp::Implied,
             debug_desc: DebugDesc::ChangeVal(0),
         }
@@ -76,6 +78,7 @@ impl CPU {
     }
 
     pub fn step(&mut self) -> Result<(), ExecutionError> {
+        self.debug_pc = self.pc;
         let inst_byte = self.next_byte();
 
         let Some((inst, addr_mode)) = decode_inst(inst_byte) else {
@@ -401,21 +404,21 @@ impl CPU {
                 let result = self.a.data.wrapping_sub(operand);
                 self.check_nz(Register { data: result });
                 self.status.carry = self.a.data >= operand;
-                self.debug_desc = DebugDesc::Compare(self.a.data, operand, self.status.into());
+                self.debug_desc = DebugDesc::Compare(self.a.data, operand);
             }
             Inst::CPX => {
                 let operand = self.read_byte_addressed(addr_mode).1;
                 let result = self.x.data.wrapping_sub(operand);
                 self.check_nz(Register { data: result });
                 self.status.carry = self.x.data >= operand;
-                self.debug_desc = DebugDesc::Compare(self.x.data, operand, self.status.into());
+                self.debug_desc = DebugDesc::Compare(self.x.data, operand);
             }
             Inst::CPY => {
                 let operand = self.read_byte_addressed(addr_mode).1;
                 let result = self.y.data.wrapping_sub(operand);
                 self.check_nz(Register { data: result });
                 self.status.carry = self.y.data >= operand;
-                self.debug_desc = DebugDesc::Compare(self.y.data, operand, self.status.into());
+                self.debug_desc = DebugDesc::Compare(self.y.data, operand);
             }
 
             Inst::BRA => {
@@ -531,7 +534,7 @@ impl CPU {
                 let hi_pc = self.pull_byte() as u16;
                 self.pc = (hi_pc << 8) | lo_pc;
                 self.debug_operand = DebugOp::Implied;
-                self.debug_desc = DebugDesc::Restore(self.pc, self.status);
+                self.debug_desc = DebugDesc::Restore(self.pc);
             }
 
             Inst::BIT => {
@@ -557,21 +560,8 @@ impl CPU {
             return;
         }
         trace!(
-            "{:#06x} {} {:?} {} ; {}\r",
-            self.pc.wrapping_sub(match self.debug_operand {
-                DebugOp::Implied => 1,
-                DebugOp::Immediate(_)
-                | DebugOp::ZeroPage(_)
-                | DebugOp::ZeroPageX(_, _)
-                | DebugOp::ZeroPageY(_, _)
-                | DebugOp::XIndirect(_, _)
-                | DebugOp::IndirectY(_, _)
-                | DebugOp::Relative(_) => 2,
-                DebugOp::Indirect(_)
-                | DebugOp::Absolute(_)
-                | DebugOp::AbsoluteX(_, _)
-                | DebugOp::AbsoluteY(_, _) => 3,
-            }),
+            "{:#06x} {} {:?} {: <15} ; {}\r",
+            self.debug_pc,
             self.status,
             inst,
             match self.debug_operand {
@@ -591,13 +581,11 @@ impl CPU {
             match self.debug_desc {
                 DebugDesc::ChangeVal(v) => format!("result = {:#04x}", v),
                 DebugDesc::ChangeStack(v, sp) => format!("value = {:#04x}, sp = {:#04x}", v, sp),
-                DebugDesc::Compare(reg, operand, status) => format!(
-                    "reg = {:#04x}, operand = {:#04x}, status = {}",
-                    reg, operand, status
-                ),
+                DebugDesc::Compare(reg, operand) =>
+                    format!("reg = {:#04x}, operand = {:#04x}", reg, operand),
                 DebugDesc::Cond(v) => format!("flag = {}", v),
                 DebugDesc::Jmp(v) => format!("addr = {:#06x}", v),
-                DebugDesc::Restore(pc, status) => format!("pc = {:#06x}, status = {}", pc, status),
+                DebugDesc::Restore(pc) => format!("pc = {:#06x}", pc),
             }
         );
     }
@@ -767,6 +755,10 @@ impl CPU {
     pub fn write_byte(&mut self, addr: u16, data: u8) {
         self.layout.write_byte(addr as usize, data);
     }
+
+    pub fn get_pc(&self) -> u16 {
+        self.pc
+    }
 }
 
 #[derive(Debug)]
@@ -857,10 +849,10 @@ enum DebugOp {
 
 #[derive(Debug)]
 enum DebugDesc {
-    ChangeVal(u8),           // result
-    ChangeStack(u8, u8),     // value, sp
-    Compare(u8, u8, Status), // Reg, Mem, status
-    Cond(u8),                // flag status
-    Jmp(u16),                // addr
-    Restore(u16, Status),    // pc, status
+    ChangeVal(u8),       // result
+    ChangeStack(u8, u8), // value, sp
+    Compare(u8, u8),     // Reg, Mem
+    Cond(u8),            // flag status
+    Jmp(u16),            // addr
+    Restore(u16),        // pc
 }

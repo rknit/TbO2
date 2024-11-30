@@ -17,6 +17,8 @@ use termion::{
 fn main() {
     const CLOCK_PERIOD_NANOS: u64 = 71; // 14 Mhz
 
+    env_logger::builder().format_timestamp(None).init();
+
     let mut stdout = io::stdout().into_raw_mode().unwrap();
     let mut keys = termion::async_stdin().keys();
 
@@ -47,7 +49,7 @@ fn main() {
         }
 
         if let Err(e) = cpu.step() {
-            write!(stdout, "\r\nError: {:0x?} at {:#04x}\r\n", e, cpu.pc).unwrap();
+            write!(stdout, "\r\nError: {:0x?} at {:#04x}\r\n", e, cpu.get_pc()).unwrap();
             stdout.flush().unwrap();
             break;
         }
@@ -99,6 +101,7 @@ fn setup_mem(cpu: &mut CPU) {
         image.len() == 0x8000,
         "\r\nimage's size is not the exact size of ROM\r\n"
     );
+    //let image = [0; 0x8000];
     rom.load_bytes(0, &image);
 
     cpu.set_region(0x0000, 0x7FFF, Box::new(RAM::<0x8000>::new()));
