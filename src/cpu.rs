@@ -1,3 +1,7 @@
+use core::fmt;
+
+use log::{log_enabled, trace};
+
 use crate::{
     inst::{decode_inst, AddressingMode, Inst},
     layout::Layout,
@@ -6,13 +10,16 @@ use crate::{
 
 #[derive(Debug)]
 pub struct CPU {
-    pub pc: u16,
+    pc: u16,
     sp: u8,
     a: Register,
     x: Register,
     y: Register,
     status: Status,
     layout: Layout,
+
+    debug_operand: DebugOp,
+    debug_desc: DebugDesc,
 }
 impl CPU {
     pub fn new() -> Self {
@@ -24,6 +31,8 @@ impl CPU {
             y: Default::default(),
             status: Status::default(),
             layout: Layout::new(u16::max_value() as usize + 1),
+            debug_operand: DebugOp::Implied,
+            debug_desc: DebugDesc::ChangeVal(0),
         }
     }
 
@@ -72,19 +81,21 @@ impl CPU {
         let Some((inst, addr_mode)) = decode_inst(inst_byte) else {
             return Err(ExecutionError::UnknownInst(inst_byte));
         };
-        //println!("{:#06x} {:?} {:?}\r", self.pc, inst, addr_mode);
 
         match inst {
             Inst::LDA => {
                 self.a.data = self.read_byte_addressed(addr_mode).1;
+                self.debug_desc = DebugDesc::ChangeVal(self.a.data);
                 self.check_nz(self.a);
             }
             Inst::LDX => {
                 self.x.data = self.read_byte_addressed(addr_mode).1;
+                self.debug_desc = DebugDesc::ChangeVal(self.x.data);
                 self.check_nz(self.x);
             }
             Inst::LDY => {
                 self.y.data = self.read_byte_addressed(addr_mode).1;
+                self.debug_desc = DebugDesc::ChangeVal(self.y.data);
                 self.check_nz(self.y);
             }
 
@@ -94,45 +105,81 @@ impl CPU {
 
             Inst::TAX => {
                 self.x = self.a;
+                self.debug_operand = DebugOp::Implied;
+                self.debug_desc = DebugDesc::ChangeVal(self.x.data);
                 self.check_nz(self.x);
             }
             Inst::TAY => {
                 self.y = self.a;
+                self.debug_operand = DebugOp::Implied;
+                self.debug_desc = DebugDesc::ChangeVal(self.y.data);
                 self.check_nz(self.y);
             }
             Inst::TSX => {
                 self.x.data = self.sp;
+                self.debug_operand = DebugOp::Implied;
+                self.debug_desc = DebugDesc::ChangeVal(self.x.data);
                 self.check_nz(self.x);
             }
             Inst::TXA => {
                 self.a = self.x;
+                self.debug_operand = DebugOp::Implied;
+                self.debug_desc = DebugDesc::ChangeVal(self.a.data);
                 self.check_nz(self.a);
             }
             Inst::TXS => {
                 self.sp = self.x.data;
+                self.debug_operand = DebugOp::Implied;
+                self.debug_desc = DebugDesc::ChangeVal(self.sp);
             }
             Inst::TYA => {
                 self.a = self.y;
+                self.debug_operand = DebugOp::Implied;
+                self.debug_desc = DebugDesc::ChangeVal(self.a.data);
                 self.check_nz(self.a);
             }
 
-            Inst::PHA => self.push_byte(self.a.data),
-            Inst::PHP => self.push_byte(self.status.into()),
-            Inst::PHX => self.push_byte(self.x.data),
-            Inst::PHY => self.push_byte(self.y.data),
+            Inst::PHA => {
+                self.push_byte(self.a.data);
+                self.debug_operand = DebugOp::Implied;
+                self.debug_desc = DebugDesc::ChangeStack(self.a.data, self.sp);
+            }
+            Inst::PHP => {
+                self.push_byte(self.status.into());
+                self.debug_operand = DebugOp::Implied;
+                self.debug_desc = DebugDesc::ChangeStack(self.status.into(), self.sp);
+            }
+            Inst::PHX => {
+                self.push_byte(self.x.data);
+                self.debug_operand = DebugOp::Implied;
+                self.debug_desc = DebugDesc::ChangeStack(self.x.data, self.sp);
+            }
+            Inst::PHY => {
+                self.push_byte(self.y.data);
+                self.debug_operand = DebugOp::Implied;
+                self.debug_desc = DebugDesc::ChangeStack(self.y.data, self.sp);
+            }
             Inst::PLA => {
                 self.a.data = self.pull_byte();
+                self.debug_operand = DebugOp::Implied;
+                self.debug_desc = DebugDesc::ChangeStack(self.a.data, self.sp);
                 self.check_nz(self.a);
             }
             Inst::PLP => {
                 self.status = Status::from(self.pull_byte());
+                self.debug_operand = DebugOp::Implied;
+                self.debug_desc = DebugDesc::ChangeStack(self.status.into(), self.sp);
             }
             Inst::PLX => {
                 self.x.data = self.pull_byte();
+                self.debug_operand = DebugOp::Implied;
+                self.debug_desc = DebugDesc::ChangeStack(self.x.data, self.sp);
                 self.check_nz(self.x);
             }
             Inst::PLY => {
                 self.y.data = self.pull_byte();
+                self.debug_operand = DebugOp::Implied;
+                self.debug_desc = DebugDesc::ChangeStack(self.x.data, self.sp);
                 self.check_nz(self.y);
             }
 
@@ -140,39 +187,53 @@ impl CPU {
                 if addr_mode == AddressingMode::Implied {
                     self.a.data = self.a.data.wrapping_sub(1);
                     self.check_nz(self.a);
+                    self.debug_operand = DebugOp::Implied;
+                    self.debug_desc = DebugDesc::ChangeVal(self.a.data);
                 } else {
                     let (addr, mut data) = self.read_byte_addressed(addr_mode);
                     data = data.wrapping_sub(1);
                     self.write_byte(addr, data);
                     self.check_nz(Register { data });
+                    self.debug_desc = DebugDesc::ChangeVal(data);
                 }
             }
             Inst::DEX => {
                 self.x.data = self.x.data.wrapping_sub(1);
                 self.check_nz(self.x);
+                self.debug_operand = DebugOp::Implied;
+                self.debug_desc = DebugDesc::ChangeVal(self.x.data);
             }
             Inst::DEY => {
                 self.y.data = self.y.data.wrapping_sub(1);
                 self.check_nz(self.y);
+                self.debug_operand = DebugOp::Implied;
+                self.debug_desc = DebugDesc::ChangeVal(self.y.data);
             }
             Inst::INC => {
                 if addr_mode == AddressingMode::Implied {
                     self.a.data = self.a.data.wrapping_add(1);
                     self.check_nz(self.a);
+                    self.debug_operand = DebugOp::Implied;
+                    self.debug_desc = DebugDesc::ChangeVal(self.a.data);
                 } else {
                     let (addr, mut data) = self.read_byte_addressed(addr_mode);
                     data = data.wrapping_add(1);
                     self.write_byte(addr, data);
                     self.check_nz(Register { data });
+                    self.debug_desc = DebugDesc::ChangeVal(data);
                 }
             }
             Inst::INX => {
                 self.x.data = self.x.data.wrapping_add(1);
                 self.check_nz(self.x);
+                self.debug_operand = DebugOp::Implied;
+                self.debug_desc = DebugDesc::ChangeVal(self.x.data);
             }
             Inst::INY => {
                 self.y.data = self.y.data.wrapping_add(1);
                 self.check_nz(self.y);
+                self.debug_operand = DebugOp::Implied;
+                self.debug_desc = DebugDesc::ChangeVal(self.y.data);
             }
 
             Inst::ADC => {
@@ -186,6 +247,7 @@ impl CPU {
                     ((result ^ self.a.data as u16) & (result ^ operand) & 0x80) > 0;
                 self.a.data = result as u8;
                 self.check_nz(self.a);
+                self.debug_desc = DebugDesc::ChangeVal(self.a.data);
             }
             Inst::SBC => {
                 let operand = self.read_byte_addressed(addr_mode).1;
@@ -198,22 +260,26 @@ impl CPU {
                     ((result ^ self.a.data as u16) & (result ^ (operand as u16)) & 0x80) > 0;
                 self.a.data = result as u8;
                 self.check_nz(self.a);
+                self.debug_desc = DebugDesc::ChangeVal(self.a.data);
             }
 
             Inst::AND => {
                 let data = self.read_byte_addressed(addr_mode).1;
                 self.a.data &= data;
                 self.check_nz(self.a);
+                self.debug_desc = DebugDesc::ChangeVal(self.a.data);
             }
             Inst::EOR => {
                 let data = self.read_byte_addressed(addr_mode).1;
                 self.a.data ^= data;
                 self.check_nz(self.a);
+                self.debug_desc = DebugDesc::ChangeVal(self.a.data);
             }
             Inst::ORA => {
                 let data = self.read_byte_addressed(addr_mode).1;
                 self.a.data |= data;
                 self.check_nz(self.a);
+                self.debug_desc = DebugDesc::ChangeVal(self.a.data);
             }
 
             Inst::ASL => {
@@ -224,6 +290,7 @@ impl CPU {
                     send_carry = (data & 0b10000000) > 0;
                     data <<= 1;
                     self.a.data = data;
+                    self.debug_operand = DebugOp::Implied;
                 } else {
                     let read = self.read_byte_addressed(addr_mode);
                     data = read.1;
@@ -233,6 +300,7 @@ impl CPU {
                 }
                 self.check_nz(Register { data });
                 self.status.carry = send_carry;
+                self.debug_desc = DebugDesc::ChangeVal(data);
             }
             Inst::LSR => {
                 let mut data;
@@ -242,6 +310,7 @@ impl CPU {
                     send_carry = (data & 0b1) > 0;
                     data >>= 1;
                     self.a.data = data;
+                    self.debug_operand = DebugOp::Implied;
                 } else {
                     let read = self.read_byte_addressed(addr_mode);
                     data = read.1;
@@ -251,6 +320,7 @@ impl CPU {
                 };
                 self.check_nz(Register { data });
                 self.status.carry = send_carry;
+                self.debug_desc = DebugDesc::ChangeVal(data);
             }
             Inst::ROL => {
                 let mut data;
@@ -261,6 +331,7 @@ impl CPU {
                     data <<= 1;
                     data |= self.status.carry as u8;
                     self.a.data = data;
+                    self.debug_operand = DebugOp::Implied;
                 } else {
                     let read = self.read_byte_addressed(addr_mode);
                     data = read.1;
@@ -271,6 +342,7 @@ impl CPU {
                 };
                 self.check_nz(Register { data });
                 self.status.carry = send_carry;
+                self.debug_desc = DebugDesc::ChangeVal(data);
             }
             Inst::ROR => {
                 let mut data;
@@ -281,6 +353,7 @@ impl CPU {
                     data >>= 1;
                     data |= (self.status.carry as u8) << 7;
                     self.a.data = data;
+                    self.debug_operand = DebugOp::Implied;
                 } else {
                     let read = self.read_byte_addressed(addr_mode);
                     data = read.1;
@@ -291,33 +364,58 @@ impl CPU {
                 };
                 self.check_nz(Register { data });
                 self.status.carry = send_carry;
+                self.debug_desc = DebugDesc::ChangeVal(data);
             }
 
-            Inst::CLC => self.status.carry = false,
-            Inst::CLD => self.status.decimal = false,
-            Inst::CLI => self.status.int_disable = false,
-            Inst::CLV => self.status.overflow = false,
-            Inst::SEC => self.status.carry = true,
-            Inst::SED => self.status.decimal = true,
-            Inst::SEI => self.status.int_disable = true,
+            Inst::CLC => {
+                self.status.carry = false;
+                self.debug_desc = DebugDesc::ChangeVal(self.status.carry as u8);
+            }
+            Inst::CLD => {
+                self.status.decimal = false;
+                self.debug_desc = DebugDesc::ChangeVal(self.status.decimal as u8);
+            }
+            Inst::CLI => {
+                self.status.int_disable = false;
+                self.debug_desc = DebugDesc::ChangeVal(self.status.int_disable as u8);
+            }
+            Inst::CLV => {
+                self.status.overflow = false;
+                self.debug_desc = DebugDesc::ChangeVal(self.status.overflow as u8);
+            }
+            Inst::SEC => {
+                self.status.carry = true;
+                self.debug_desc = DebugDesc::ChangeVal(self.status.carry as u8);
+            }
+            Inst::SED => {
+                self.status.decimal = true;
+                self.debug_desc = DebugDesc::ChangeVal(self.status.decimal as u8);
+            }
+            Inst::SEI => {
+                self.status.int_disable = true;
+                self.debug_desc = DebugDesc::ChangeVal(self.status.int_disable as u8);
+            }
 
             Inst::CMP => {
                 let operand = self.read_byte_addressed(addr_mode).1;
                 let result = self.a.data.wrapping_sub(operand);
                 self.check_nz(Register { data: result });
                 self.status.carry = self.a.data >= operand;
+                self.debug_desc = DebugDesc::Compare(self.a.data, operand, self.status.into());
             }
             Inst::CPX => {
                 let operand = self.read_byte_addressed(addr_mode).1;
                 let result = self.x.data.wrapping_sub(operand);
                 self.check_nz(Register { data: result });
                 self.status.carry = self.x.data >= operand;
+                self.debug_desc = DebugDesc::Compare(self.x.data, operand, self.status.into());
             }
             Inst::CPY => {
                 let operand = self.read_byte_addressed(addr_mode).1;
                 let result = self.y.data.wrapping_sub(operand);
                 self.check_nz(Register { data: result });
                 self.status.carry = self.y.data >= operand;
+                self.debug_desc = DebugDesc::Compare(self.y.data, operand, self.status.into());
             }
 
             Inst::BRA => {
@@ -330,12 +428,14 @@ impl CPU {
                 if !self.status.carry {
                     self.pc = (self.pc as i32 + offset as i32) as u16;
                 }
+                self.debug_desc = DebugDesc::Cond(self.status.carry as u8);
             }
             Inst::BCS => {
                 let offset = self.read_byte_relative();
                 if self.status.carry {
                     self.pc = (self.pc as i32 + offset as i32) as u16;
                 }
+                self.debug_desc = DebugDesc::Cond(self.status.carry as u8);
             }
 
             Inst::BNE => {
@@ -343,12 +443,14 @@ impl CPU {
                 if !self.status.zero {
                     self.pc = (self.pc as i32 + offset as i32) as u16;
                 }
+                self.debug_desc = DebugDesc::Cond(self.status.zero as u8);
             }
             Inst::BEQ => {
                 let offset = self.read_byte_relative();
                 if self.status.zero {
                     self.pc = (self.pc as i32 + offset as i32) as u16;
                 }
+                self.debug_desc = DebugDesc::Cond(self.status.zero as u8);
             }
 
             Inst::BPL => {
@@ -356,12 +458,14 @@ impl CPU {
                 if !self.status.negative {
                     self.pc = (self.pc as i32 + offset as i32) as u16;
                 }
+                self.debug_desc = DebugDesc::Cond(self.status.negative as u8);
             }
             Inst::BMI => {
                 let offset = self.read_byte_relative();
                 if self.status.negative {
                     self.pc = (self.pc as i32 + offset as i32) as u16;
                 }
+                self.debug_desc = DebugDesc::Cond(self.status.negative as u8);
             }
 
             Inst::BVC => {
@@ -369,21 +473,28 @@ impl CPU {
                 if !self.status.overflow {
                     self.pc = (self.pc as i32 + offset as i32) as u16;
                 }
+                self.debug_desc = DebugDesc::Cond(self.status.overflow as u8);
             }
             Inst::BVS => {
                 let offset = self.read_byte_relative();
                 if self.status.overflow {
                     self.pc = (self.pc as i32 + offset as i32) as u16;
                 }
+                self.debug_desc = DebugDesc::Cond(self.status.overflow as u8);
             }
 
             Inst::JMP => {
                 if addr_mode == AddressingMode::Indirect {
-                    let indirect = self.next_word();
-                    let addr = self.read_word(indirect);
+                    let indirect_addr = self.next_word();
+                    let addr = self.read_word(indirect_addr);
                     self.pc = addr;
+                    self.debug_operand = DebugOp::Indirect(indirect_addr);
+                    self.debug_desc = DebugDesc::Jmp(self.pc);
                 } else {
-                    self.pc = self.next_word();
+                    let addr = self.next_word();
+                    self.pc = addr;
+                    self.debug_operand = DebugOp::Absolute(addr);
+                    self.debug_desc = DebugDesc::Jmp(self.pc);
                 }
             }
             Inst::JSR => {
@@ -391,11 +502,15 @@ impl CPU {
                 self.push_byte((ret_addr >> 8) as u8);
                 self.push_byte((ret_addr & 0xFF) as u8);
                 self.pc = self.next_word();
+                self.debug_operand = DebugOp::Absolute(self.pc);
+                self.debug_desc = DebugDesc::Jmp(self.pc);
             }
             Inst::RTS => {
                 let lo_pc = self.pull_byte() as u16;
                 let hi_pc = self.pull_byte() as u16;
                 self.pc = (hi_pc << 8) | lo_pc;
+                self.debug_operand = DebugOp::Implied;
+                self.debug_desc = DebugDesc::Jmp(self.pc);
             }
 
             Inst::BRK => {
@@ -407,12 +522,16 @@ impl CPU {
                 self.push_byte(status.into());
                 self.status.int_disable = true;
                 self.pc = self.read_word(0xFFFE);
+                self.debug_operand = DebugOp::Implied;
+                self.debug_desc = DebugDesc::Jmp(self.pc);
             }
             Inst::RTI => {
                 self.status = Status::from(self.pull_byte());
                 let lo_pc = self.pull_byte() as u16;
                 let hi_pc = self.pull_byte() as u16;
                 self.pc = (hi_pc << 8) | lo_pc;
+                self.debug_operand = DebugOp::Implied;
+                self.debug_desc = DebugDesc::Restore(self.pc, self.status);
             }
 
             Inst::BIT => {
@@ -420,12 +539,67 @@ impl CPU {
                 self.status.zero = (self.a.data & data) == 0;
                 self.status.negative = (data & 0b10000000) > 0;
                 self.status.overflow = (data & 0b1000000) > 0;
+                self.debug_desc = DebugDesc::Cond(self.status.into());
             }
 
-            Inst::NOP => (),
+            Inst::NOP => {
+                self.debug_operand = DebugOp::Implied;
+            }
         };
 
+        self.trace_exec(inst);
+
         Ok(())
+    }
+
+    fn trace_exec(&self, inst: Inst) {
+        if !log_enabled!(log::Level::Trace) {
+            return;
+        }
+        trace!(
+            "{:#06x} {} {:?} {} ; {}\r",
+            self.pc.wrapping_sub(match self.debug_operand {
+                DebugOp::Implied => 1,
+                DebugOp::Immediate(_)
+                | DebugOp::ZeroPage(_)
+                | DebugOp::ZeroPageX(_, _)
+                | DebugOp::ZeroPageY(_, _)
+                | DebugOp::XIndirect(_, _)
+                | DebugOp::IndirectY(_, _)
+                | DebugOp::Relative(_) => 2,
+                DebugOp::Indirect(_)
+                | DebugOp::Absolute(_)
+                | DebugOp::AbsoluteX(_, _)
+                | DebugOp::AbsoluteY(_, _) => 3,
+            }),
+            self.status,
+            inst,
+            match self.debug_operand {
+                DebugOp::Implied => String::new(),
+                DebugOp::Immediate(v) => format!("#{:02x}", v),
+                DebugOp::ZeroPage(v) => format!("#${:02x}", v),
+                DebugOp::ZeroPageX(v, x) => format!("#${:02x}, X({:#04x})", v, x),
+                DebugOp::ZeroPageY(v, y) => format!("#${:02x}, Y({:#04x})", v, y),
+                DebugOp::Absolute(v) => format!("${:04x}", v),
+                DebugOp::AbsoluteX(v, x) => format!("${:04x}, X({:#04x})", v, x),
+                DebugOp::AbsoluteY(v, y) => format!("${:04x}, Y({:#04x})", v, y),
+                DebugOp::Relative(v) => format!("${:04x}", (self.pc as i32 + v as i32) as u16),
+                DebugOp::Indirect(v) => format!("(${:04x})", v),
+                DebugOp::XIndirect(v, x) => format!("(#${:02x}, X({:#04x}))", v, x),
+                DebugOp::IndirectY(v, y) => format!("(#${:02x}), Y({:#04x})", v, y),
+            },
+            match self.debug_desc {
+                DebugDesc::ChangeVal(v) => format!("result = {:#04x}", v),
+                DebugDesc::ChangeStack(v, sp) => format!("value = {:#04x}, sp = {:#04x}", v, sp),
+                DebugDesc::Compare(reg, operand, status) => format!(
+                    "reg = {:#04x}, operand = {:#04x}, status = {}",
+                    reg, operand, status
+                ),
+                DebugDesc::Cond(v) => format!("flag = {}", v),
+                DebugDesc::Jmp(v) => format!("addr = {:#06x}", v),
+                DebugDesc::Restore(pc, status) => format!("pc = {:#06x}, status = {}", pc, status),
+            }
+        );
     }
 
     fn check_nz(&mut self, reg: Register) {
@@ -448,47 +622,66 @@ impl CPU {
     }
 
     fn read_byte_relative(&mut self) -> i8 {
-        self.next_byte() as i8
+        let rel_addr = self.next_byte() as i8;
+        self.debug_operand = DebugOp::Relative(rel_addr);
+        rel_addr
     }
 
     fn read_byte_addressed(&mut self, addr_mode: AddressingMode) -> (u16, u8) {
         match addr_mode {
             AddressingMode::Implied => unimplemented!("Implied addressing mode"),
-            AddressingMode::Immediate => (self.pc, self.next_byte()),
+            AddressingMode::Immediate => {
+                let data = self.next_byte();
+                self.debug_operand = DebugOp::Immediate(data);
+                (self.pc, data)
+            }
             AddressingMode::Absolute => {
                 let addr = self.next_word();
+                self.debug_operand = DebugOp::Absolute(addr);
                 (addr, self.read_byte(addr))
             }
             AddressingMode::AbsoluteX => {
-                let addr = self.next_word() + self.x.data as u16;
+                let abs_addr = self.next_word();
+                let addr = abs_addr.wrapping_add(self.x.data as u16);
+                self.debug_operand = DebugOp::AbsoluteX(abs_addr, self.x.data);
                 (addr, self.read_byte(addr))
             }
             AddressingMode::AbsoluteY => {
-                let addr = self.next_word() + self.y.data as u16;
+                let abs_addr = self.next_word();
+                let addr = abs_addr.wrapping_add(self.y.data as u16);
+                self.debug_operand = DebugOp::AbsoluteY(abs_addr, self.y.data);
                 (addr, self.read_byte(addr))
             }
             AddressingMode::Indirect => unimplemented!("Indirect addressing mode"),
             AddressingMode::XIndirect => {
-                let indexed = self.next_byte().wrapping_add(self.x.data);
+                let zp_addr = self.next_byte();
+                let indexed = zp_addr.wrapping_add(self.x.data);
                 let addr = self.read_word(indexed as u16);
+                self.debug_operand = DebugOp::XIndirect(zp_addr, self.x.data);
                 (addr, self.read_byte(addr))
             }
             AddressingMode::IndirectY => {
-                let zp_addr = self.next_byte() as u16;
-                let addr = self.read_word(zp_addr) + self.y.data as u16;
+                let zp_addr = self.next_byte();
+                let addr = self.read_word(zp_addr as u16) + self.y.data as u16;
+                self.debug_operand = DebugOp::IndirectY(zp_addr, self.y.data);
                 (addr, self.read_byte(addr))
             }
             AddressingMode::Relative => unimplemented!("Relative addressing mode"),
             AddressingMode::ZeroPage => {
-                let addr = self.next_byte() as u16;
-                (addr, self.read_byte(addr))
+                let addr = self.next_byte();
+                self.debug_operand = DebugOp::ZeroPage(addr);
+                (addr as u16, self.read_byte(addr as u16))
             }
             AddressingMode::ZeroPageX => {
-                let addr = (self.next_byte().wrapping_add(self.x.data)) as u16;
+                let zp_addr = self.next_byte();
+                let addr = (zp_addr.wrapping_add(self.x.data)) as u16;
+                self.debug_operand = DebugOp::ZeroPageX(zp_addr, self.x.data);
                 (addr, self.read_byte(addr))
             }
             AddressingMode::ZeroPageY => {
-                let addr = (self.next_byte().wrapping_add(self.y.data)) as u16;
+                let zp_addr = self.next_byte();
+                let addr = (zp_addr.wrapping_add(self.y.data)) as u16;
+                self.debug_operand = DebugOp::ZeroPageY(zp_addr, self.y.data);
                 (addr, self.read_byte(addr))
             }
         }
@@ -500,39 +693,51 @@ impl CPU {
             AddressingMode::Immediate => unimplemented!("Immediate addressing mode"),
             AddressingMode::Absolute => {
                 let addr = self.next_word();
+                self.debug_operand = DebugOp::Absolute(addr);
                 self.write_byte(addr, data);
             }
             AddressingMode::AbsoluteX => {
-                let addr = self.next_word() + self.x.data as u16;
+                let abs_addr = self.next_word();
+                let addr = abs_addr.wrapping_add(self.x.data as u16);
+                self.debug_operand = DebugOp::AbsoluteX(abs_addr, self.x.data);
                 self.write_byte(addr, data);
             }
             AddressingMode::AbsoluteY => {
-                let addr = self.next_word() + self.y.data as u16;
+                let abs_addr = self.next_word();
+                let addr = abs_addr.wrapping_add(self.y.data as u16);
+                self.debug_operand = DebugOp::AbsoluteY(abs_addr, self.y.data);
                 self.write_byte(addr, data);
             }
             AddressingMode::Indirect => unimplemented!("Indirect addressing mode"),
             AddressingMode::XIndirect => {
-                let indexed = self.next_byte().wrapping_add(self.x.data);
-                let addr = self.read_word(indexed as u16);
+                let zp_addr = self.next_byte();
+                let addr = self.read_word(zp_addr.wrapping_add(self.x.data) as u16);
+                self.debug_operand = DebugOp::XIndirect(zp_addr, self.x.data);
                 self.write_byte(addr, data);
             }
             AddressingMode::IndirectY => {
-                let zp_addr = self.next_byte() as u16;
-                let indexed = self.read_word(zp_addr) + self.y.data as u16;
-                self.write_byte(indexed, data);
+                let zp_addr = self.next_byte();
+                let addr = self.read_word(zp_addr as u16) + self.y.data as u16;
+                self.debug_operand = DebugOp::IndirectY(zp_addr, self.y.data);
+                self.write_byte(addr, data);
             }
             AddressingMode::Relative => unimplemented!("Relative addressing mode"),
             AddressingMode::ZeroPage => {
-                let zp_addr = self.next_byte() as u16;
-                self.write_byte(zp_addr, data);
+                let zp_addr = self.next_byte();
+                self.debug_operand = DebugOp::ZeroPage(zp_addr);
+                self.write_byte(zp_addr as u16, data);
             }
             AddressingMode::ZeroPageX => {
-                let indexed = self.next_byte().wrapping_add(self.x.data);
-                self.write_byte(indexed as u16, data);
+                let zp_addr = self.next_byte();
+                let addr = zp_addr.wrapping_add(self.x.data) as u16;
+                self.debug_operand = DebugOp::ZeroPageX(zp_addr, self.x.data);
+                self.write_byte(addr, data);
             }
             AddressingMode::ZeroPageY => {
-                let indexed = self.next_byte().wrapping_add(self.y.data);
-                self.write_byte(indexed as u16, data);
+                let zp_addr = self.next_byte();
+                let addr = zp_addr.wrapping_add(self.y.data) as u16;
+                self.debug_operand = DebugOp::ZeroPageY(zp_addr, self.y.data);
+                self.write_byte(addr, data);
             }
         }
     }
@@ -604,6 +809,21 @@ impl From<u8> for Status {
         }
     }
 }
+impl fmt::Display for Status {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "N{},Z{},C{},I{},D{},V{},B{}",
+            self.negative as u8,
+            self.zero as u8,
+            self.carry as u8,
+            self.int_disable as u8,
+            self.decimal as u8,
+            self.overflow as u8,
+            self.break_ as u8
+        )
+    }
+}
 
 #[derive(Debug, Default, Clone, Copy)]
 struct Register {
@@ -617,4 +837,30 @@ impl Register {
     pub fn is_zero(&self) -> bool {
         self.data == 0
     }
+}
+
+#[derive(Debug)]
+enum DebugOp {
+    Implied,
+    Immediate(u8),
+    ZeroPage(u8),
+    ZeroPageX(u8, u8),
+    ZeroPageY(u8, u8),
+    Absolute(u16),
+    AbsoluteX(u16, u8),
+    AbsoluteY(u16, u8),
+    Indirect(u16),
+    Relative(i8),
+    XIndirect(u8, u8),
+    IndirectY(u8, u8),
+}
+
+#[derive(Debug)]
+enum DebugDesc {
+    ChangeVal(u8),           // result
+    ChangeStack(u8, u8),     // value, sp
+    Compare(u8, u8, Status), // Reg, Mem, status
+    Cond(u8),                // flag status
+    Jmp(u16),                // addr
+    Restore(u16, Status),    // pc, status
 }
