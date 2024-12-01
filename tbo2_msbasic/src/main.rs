@@ -62,13 +62,7 @@ fn main() {
 }
 
 fn print_char(stdout: &mut RawTerminal<Stdout>, c: char) {
-    if c == '\n' {
-        return;
-    }
     write!(stdout, "{}", c).unwrap();
-    if c == '\r' {
-        write!(stdout, "\n").unwrap();
-    }
     stdout.flush().unwrap();
 }
 
@@ -118,7 +112,7 @@ mod tests {
             panic!("{}", e);
         }
 
-        const CLOCK_PERIOD_NANOS: u64 = 0;
+        const CLOCK_PERIOD_NANOS: u64 = 71;
 
         let mut cpu = CPU::new();
 
