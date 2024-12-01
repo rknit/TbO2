@@ -96,7 +96,7 @@ fn get_char(keys: &mut Keys<AsyncReader>) -> Option<char> {
 
 fn setup_mem(cpu: &mut CPU) {
     let mut rom = ROM::<0x8000>::new();
-    let image = fs::read("asm/tbo2.bin").expect("\r\ntemporary binary file\r\n");
+    let image = fs::read("tbo2.bin").expect("\r\ntemporary binary file\r\n");
     assert!(
         image.len() == 0x8000,
         "\r\nimage's size is not the exact size of ROM\r\n"
@@ -106,4 +106,60 @@ fn setup_mem(cpu: &mut CPU) {
 
     cpu.set_region(0x0000, 0x7FFF, Box::new(RAM::<0x8000>::new()));
     cpu.set_region(0x8000, 0xFFFF, Box::new(rom));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn klaus_dormann_test_suite() {
+        if let Err(e) = env_logger::builder().format_timestamp(None).try_init() {
+            panic!("{}", e);
+        }
+
+        const CLOCK_PERIOD_NANOS: u64 = 0;
+
+        let mut cpu = CPU::new();
+
+        let image = fs::read("6502_65C02_functional_tests/ca65/6502_functional_test.bin")
+            .expect("test binary file");
+
+        let (ram_part, rom_part) = image.split_at(0x8000);
+
+        let mut ram = RAM::<0x8000>::new();
+        ram.load_bytes(0, ram_part);
+
+        let mut rom = ROM::<0x8000>::new();
+        rom.load_bytes(0, rom_part);
+
+        cpu.set_region(0x0000, 0x7FFF, Box::new(ram));
+        cpu.set_region(0x8000, 0xFFFF, Box::new(rom));
+
+        cpu.reset();
+        cpu.set_pc(0x400);
+
+        let mut prev_pc: i32 = -1;
+        loop {
+            let timer_start = Instant::now();
+
+            if let Err(e) = cpu.step() {
+                panic!("Error: {:0x?} at {:#04x}", e, cpu.get_pc());
+            }
+
+            if cpu.get_pc() as i32 == prev_pc {
+                if cpu.get_pc() == 0x3699 {
+                    break;
+                }
+                panic!("trapped");
+            }
+            prev_pc = cpu.get_pc() as i32;
+
+            while Instant::now().duration_since(timer_start)
+                < Duration::from_nanos(CLOCK_PERIOD_NANOS)
+            {
+                continue;
+            }
+        }
+    }
 }

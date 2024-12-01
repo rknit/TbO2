@@ -51,6 +51,9 @@ impl CPU {
         self.y = Default::default();
 
         self.sp = 0xFF;
+        self.push_byte((self.pc >> 8) as u8);
+        self.push_byte((self.pc & 0xFF) as u8);
+        self.push_byte(self.status.into());
         self.pc = self.read_word(0xFFFC);
     }
 
@@ -73,12 +76,12 @@ impl CPU {
         let mut status = self.status;
         status.break_ = false;
         self.push_byte(status.into());
-        self.status.int_disable = true;
         self.pc = self.read_word(0xFFFA);
     }
 
     pub fn step(&mut self) -> Result<(), ExecutionError> {
         self.debug_pc = self.pc;
+        self.debug_desc = DebugDesc::Unset;
         let inst_byte = self.next_byte();
 
         let Some((inst, addr_mode)) = decode_inst(inst_byte) else {
@@ -148,7 +151,9 @@ impl CPU {
                 self.debug_desc = DebugDesc::ChangeStack(self.a.data, self.sp);
             }
             Inst::PHP => {
-                self.push_byte(self.status.into());
+                let mut status = self.status;
+                status.break_ = true;
+                self.push_byte(status.into());
                 self.debug_operand = DebugOp::Implied;
                 self.debug_desc = DebugDesc::ChangeStack(self.status.into(), self.sp);
             }
@@ -253,9 +258,9 @@ impl CPU {
                 self.debug_desc = DebugDesc::ChangeVal(self.a.data);
             }
             Inst::SBC => {
-                let operand = self.read_byte_addressed(addr_mode).1;
+                let operand = self.read_byte_addressed(addr_mode).1 ^ 0xFF;
                 let result = (self.a.data as u16)
-                    .wrapping_add((operand ^ 0xFF) as u16) // invert operand to get -operand - 1
+                    .wrapping_add(operand as u16) // invert operand to get -operand - 1
                     .wrapping_add(self.status.carry as u16);
 
                 self.status.carry = result > 0xFF;
@@ -486,25 +491,28 @@ impl CPU {
                 self.debug_desc = DebugDesc::Cond(self.status.overflow as u8);
             }
 
-            Inst::JMP => {
-                if addr_mode == AddressingMode::Indirect {
+            Inst::JMP => match addr_mode {
+                AddressingMode::Indirect => {
                     let indirect_addr = self.next_word();
                     let addr = self.read_word(indirect_addr);
                     self.pc = addr;
                     self.debug_operand = DebugOp::Indirect(indirect_addr);
                     self.debug_desc = DebugDesc::Jmp(self.pc);
-                } else {
+                }
+                AddressingMode::Absolute => {
                     let addr = self.next_word();
                     self.pc = addr;
                     self.debug_operand = DebugOp::Absolute(addr);
                     self.debug_desc = DebugDesc::Jmp(self.pc);
                 }
-            }
+                _ => unimplemented!("JMP {:?}", addr_mode),
+            },
             Inst::JSR => {
-                let ret_addr = self.pc + 2;
+                let to_addr = self.next_word();
+                let ret_addr = self.pc.wrapping_sub(1);
                 self.push_byte((ret_addr >> 8) as u8);
                 self.push_byte((ret_addr & 0xFF) as u8);
-                self.pc = self.next_word();
+                self.pc = to_addr;
                 self.debug_operand = DebugOp::Absolute(self.pc);
                 self.debug_desc = DebugDesc::Jmp(self.pc);
             }
@@ -512,12 +520,13 @@ impl CPU {
                 let lo_pc = self.pull_byte() as u16;
                 let hi_pc = self.pull_byte() as u16;
                 self.pc = (hi_pc << 8) | lo_pc;
+                self.pc = self.pc.wrapping_add(1); // simulate prefetching
                 self.debug_operand = DebugOp::Implied;
                 self.debug_desc = DebugDesc::Jmp(self.pc);
             }
 
             Inst::BRK => {
-                let pc_next = self.pc + 2;
+                let pc_next = self.pc + 1;
                 self.push_byte((pc_next >> 8) as u8);
                 self.push_byte((pc_next & 0xFF) as u8);
                 let mut status = self.status;
@@ -542,7 +551,6 @@ impl CPU {
                 self.status.zero = (self.a.data & data) == 0;
                 self.status.negative = (data & 0b10000000) > 0;
                 self.status.overflow = (data & 0b1000000) > 0;
-                self.debug_desc = DebugDesc::Cond(self.status.into());
             }
 
             Inst::NOP => {
@@ -566,24 +574,32 @@ impl CPU {
             inst,
             match self.debug_operand {
                 DebugOp::Implied => String::new(),
-                DebugOp::Immediate(v) => format!("#{:02x}", v),
-                DebugOp::ZeroPage(v) => format!("#${:02x}", v),
-                DebugOp::ZeroPageX(v, x) => format!("#${:02x}, X({:#04x})", v, x),
-                DebugOp::ZeroPageY(v, y) => format!("#${:02x}, Y({:#04x})", v, y),
+                DebugOp::Immediate(v) => format!("#${:02x}", v),
+                DebugOp::ZeroPage(v) => format!("${:02x}", v),
+                DebugOp::ZeroPageX(v, x) => format!("${:02x}, X({:#04x})", v, x),
+                DebugOp::ZeroPageY(v, y) => format!("${:02x}, Y({:#04x})", v, y),
                 DebugOp::Absolute(v) => format!("${:04x}", v),
                 DebugOp::AbsoluteX(v, x) => format!("${:04x}, X({:#04x})", v, x),
                 DebugOp::AbsoluteY(v, y) => format!("${:04x}, Y({:#04x})", v, y),
                 DebugOp::Relative(v) => format!("${:04x}", (self.pc as i32 + v as i32) as u16),
                 DebugOp::Indirect(v) => format!("(${:04x})", v),
-                DebugOp::XIndirect(v, x) => format!("(#${:02x}, X({:#04x}))", v, x),
-                DebugOp::IndirectY(v, y) => format!("(#${:02x}), Y({:#04x})", v, y),
+                DebugOp::XIndirect(v, x) => format!("(${:02x}, X({:#04x}))", v, x),
+                DebugOp::IndirectY(v, y) => format!("(${:02x}), Y({:#04x})", v, y),
             },
             match self.debug_desc {
+                DebugDesc::Unset => String::new(),
                 DebugDesc::ChangeVal(v) => format!("result = {:#04x}", v),
                 DebugDesc::ChangeStack(v, sp) => format!("value = {:#04x}, sp = {:#04x}", v, sp),
                 DebugDesc::Compare(reg, operand) =>
                     format!("reg = {:#04x}, operand = {:#04x}", reg, operand),
-                DebugDesc::Cond(v) => format!("flag = {}", v),
+                DebugDesc::Cond(v) => format!(
+                    "flag is {}",
+                    match v {
+                        0 => "cleared",
+                        1 => "set",
+                        _ => unimplemented!("DebugDesc::Cond {}", v),
+                    }
+                ),
                 DebugDesc::Jmp(v) => format!("addr = {:#06x}", v),
                 DebugDesc::Restore(pc) => format!("pc = {:#06x}", pc),
             }
@@ -732,13 +748,13 @@ impl CPU {
 
     fn next_byte(&mut self) -> u8 {
         let byte = self.read_byte(self.pc);
-        self.pc += 1;
+        self.pc = self.pc.wrapping_add(1);
         byte
     }
 
     fn next_word(&mut self) -> u16 {
         let word = self.read_word(self.pc);
-        self.pc += 2;
+        self.pc = self.pc.wrapping_add(2);
         word
     }
 
@@ -754,6 +770,10 @@ impl CPU {
 
     pub fn write_byte(&mut self, addr: u16, data: u8) {
         self.layout.write_byte(addr as usize, data);
+    }
+
+    pub fn set_pc(&mut self, addr: u16) {
+        self.pc = addr;
     }
 
     pub fn get_pc(&self) -> u16 {
@@ -781,7 +801,7 @@ impl Into<u8> for Status {
         (self.negative as u8) << 7
             | (self.overflow as u8) << 6
             | (1 << 5)
-            | (1 << 4)
+            | (self.break_ as u8) << 4
             | (self.decimal as u8) << 3
             | (self.int_disable as u8) << 2
             | (self.zero as u8) << 1
@@ -793,7 +813,7 @@ impl From<u8> for Status {
         Self {
             negative: (value & 0b10000000) > 0,
             overflow: (value & 0b1000000) > 0,
-            break_: false,
+            break_: (value & 0b10000) > 0,
             decimal: (value & 0b1000) > 0,
             int_disable: (value & 0b100) > 0,
             zero: (value & 0b10) > 0,
@@ -849,6 +869,7 @@ enum DebugOp {
 
 #[derive(Debug)]
 enum DebugDesc {
+    Unset,
     ChangeVal(u8),       // result
     ChangeStack(u8, u8), // value, sp
     Compare(u8, u8),     // Reg, Mem
