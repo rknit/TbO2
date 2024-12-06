@@ -1,4 +1,5 @@
 use std::{
+    collections::VecDeque,
     fs,
     io::{self, Stdout, Write},
     time::{Duration, Instant},
@@ -27,8 +28,11 @@ fn main() {
     cpu.reset();
 
     const CHR_IN: u16 = 0x5000;
-    const CHR_OUT: u16 = 0x5001;
-    const CHR_ACK: u16 = 0x5002;
+    const CHR_CTS: u16 = 0x5001;
+    const CHR_OUT: u16 = 0x5002;
+    const CHR_CTR: u16 = 0x5003;
+
+    let mut inputs = VecDeque::new();
 
     loop {
         let timer_start = Instant::now();
@@ -37,15 +41,22 @@ fn main() {
             if c == 0x4 as char {
                 break;
             }
+            if c == 'p' {
+                println!("{}\r", cpu.trace_exec());
+            }
+            inputs.push_back(c);
+        }
 
+        if !inputs.is_empty() && cpu.is_irq_enabled() && cpu.read_byte(CHR_CTS) > 0 {
+            let c = inputs.pop_front().unwrap();
             cpu.write_byte(CHR_IN, c as u8);
             cpu.irq();
         }
 
-        if cpu.read_byte(CHR_ACK) == 1 {
+        if cpu.read_byte(CHR_CTR) == 1 {
             let c = cpu.read_byte(CHR_OUT);
             print_char(&mut stdout, c as char);
-            cpu.write_byte(CHR_ACK, 0);
+            cpu.write_byte(CHR_CTR, 0);
         }
 
         if let Err(e) = cpu.step() {

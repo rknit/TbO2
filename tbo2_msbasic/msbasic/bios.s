@@ -12,8 +12,9 @@ INPUT_BUFFER:     .res $100
 .segment "BIOS"
 
 CHR_IN          = $5000
-CHR_OUT         = $5001
-CHR_ACK         = $5002
+CHR_CTS         = $5001
+CHR_OUT         = $5002
+CHR_CTR         = $5003
 
 LOAD:             
                   rts
@@ -32,6 +33,14 @@ CHRIN:
                   beq       @no_keypressed    ; if no, clear the carry bit.
                   jsr       READ_BUFFER             
                   jsr       CHROUT            ; echo char.
+                  pha
+                  jsr       BUFFER_SIZE
+                  cmp       #$B0
+                  bcs       @input_mostly_full
+                  lda       #$1
+                  sta       CHR_CTS
+@input_mostly_full:
+                  pla
                   plx
                   sec                         ; set the carry bit.
                   rts
@@ -47,15 +56,17 @@ CHROUT:
                   pha
                   sta       CHR_OUT
                   lda       #1
-                  sta       CHR_ACK
-@wait_echo:       lda       CHR_ACK
+                  sta       CHR_CTR
+@wait_echo:       lda       CHR_CTR
                   BNE       @wait_echo
                   pla
                   rts
 
 ; Modifies: A, flags
 INIT_BUFFER:
-                  lda       READ_PTR
+                  lda       #$1
+                  sta       CHR_CTS
+                  sta       READ_PTR
                   sta       WRITE_PTR
                   rts
 
@@ -86,6 +97,12 @@ IRQ_HANDLER:
                   phx
                   lda       CHR_IN
                   jsr       WRITE_BUFFER
+                  jsr       BUFFER_SIZE
+                  cmp       #$F0
+                  bcc       @input_not_full
+                  lda       #$0
+                  sta       CHR_CTS
+@input_not_full:
                   plx                
                   pla
                   rti

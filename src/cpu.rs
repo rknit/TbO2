@@ -18,6 +18,7 @@ pub struct CPU {
     status: Status,
     layout: Layout,
 
+    debug_inst: Inst,
     debug_pc: u16,
     debug_operand: DebugOp,
     debug_desc: DebugDesc,
@@ -32,6 +33,7 @@ impl CPU {
             y: Default::default(),
             status: Status::default(),
             layout: Layout::new(u16::max_value() as usize + 1),
+            debug_inst: Inst::LDA,
             debug_pc: 0,
             debug_operand: DebugOp::Implied,
             debug_desc: DebugDesc::ChangeVal(0),
@@ -57,8 +59,13 @@ impl CPU {
         self.pc = self.read_word(0xFFFC);
     }
 
+    pub fn is_irq_enabled(&self) -> bool {
+        !self.status.int_disable
+    }
+
     pub fn irq(&mut self) {
         if self.status.int_disable {
+            println!("IRQ IGNORED\r");
             return;
         }
         self.push_byte((self.pc >> 8) as u8);
@@ -87,6 +94,7 @@ impl CPU {
         let Some((inst, addr_mode)) = decode_inst(inst_byte) else {
             return Err(ExecutionError::UnknownInst(inst_byte));
         };
+        self.debug_inst = inst;
 
         match inst {
             Inst::LDA => {
@@ -558,20 +566,19 @@ impl CPU {
             }
         };
 
-        self.trace_exec(inst);
+        if log_enabled!(log::Level::Trace) {
+            trace!("{}", self.trace_exec());
+        }
 
         Ok(())
     }
 
-    fn trace_exec(&self, inst: Inst) {
-        if !log_enabled!(log::Level::Trace) {
-            return;
-        }
-        trace!(
+    pub fn trace_exec(&self) -> String {
+        format!(
             "{:#06x} {} {:?} {: <15} ; {}\r",
             self.debug_pc,
             self.status,
-            inst,
+            self.debug_inst,
             match self.debug_operand {
                 DebugOp::Implied => String::new(),
                 DebugOp::Immediate(v) => format!("#${:02x}", v),
@@ -603,7 +610,7 @@ impl CPU {
                 DebugDesc::Jmp(v) => format!("addr = {:#06x}", v),
                 DebugDesc::Restore(pc) => format!("pc = {:#06x}", pc),
             }
-        );
+        )
     }
 
     fn check_nz(&mut self, reg: Register) {
