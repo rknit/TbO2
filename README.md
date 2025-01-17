@@ -3,7 +3,7 @@ A 6502 microprocessor emulator library with customizable memory layout.
 
 ## Demo
 In tbo2_msbasic directory, you can use command ```cargo run``` in the console and `\` should be shown on the console; 
-this means that you are now running Wozmon using TbO2 emulator. You can now run the following commands to start up MS BASIC.
+this means that you are now running Wozmon using TbO2 emulator. You can now run the following commands (provided after '>') to start up [msbasic](https://github.com/mist64/msbasic).
 
 ```
 \
