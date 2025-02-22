@@ -1,6 +1,6 @@
 use core::fmt;
 
-use log::{log_enabled, trace};
+use log::{log_enabled, trace, Level};
 
 use crate::{
     inst::{decode_inst, AddressingMode, Inst},
@@ -23,8 +23,8 @@ pub struct CPU {
     debug_operand: DebugOp,
     debug_desc: DebugDesc,
 }
-impl CPU {
-    pub fn new() -> Self {
+impl Default for CPU {
+    fn default() -> Self {
         Self {
             pc: 0,
             sp: 0,
@@ -32,14 +32,15 @@ impl CPU {
             x: Default::default(),
             y: Default::default(),
             status: Status::default(),
-            layout: Layout::new(u16::max_value() as usize + 1),
+            layout: Layout::new(u16::MAX as usize + 1),
             debug_inst: Inst::LDA,
             debug_pc: 0,
             debug_operand: DebugOp::Implied,
             debug_desc: DebugDesc::ChangeVal(0),
         }
     }
-
+}
+impl CPU {
     pub fn set_region(&mut self, addr_start: usize, addr_end: usize, mem: Box<dyn Memory>) {
         self.layout.set_region(addr_start, addr_end, mem);
     }
@@ -65,7 +66,9 @@ impl CPU {
 
     pub fn irq(&mut self) {
         if self.status.int_disable {
-            println!("IRQ IGNORED\r");
+            if log_enabled!(Level::Trace) {
+                trace!("IRQ IGNORED\r");
+            }
             return;
         }
         self.push_byte((self.pc >> 8) as u8);
@@ -803,16 +806,16 @@ struct Status {
     zero: bool,
     carry: bool,
 }
-impl Into<u8> for Status {
-    fn into(self) -> u8 {
-        (self.negative as u8) << 7
-            | (self.overflow as u8) << 6
+impl From<Status> for u8 {
+    fn from(val: Status) -> Self {
+        (val.negative as u8) << 7
+            | (val.overflow as u8) << 6
             | (1 << 5)
-            | (self.break_ as u8) << 4
-            | (self.decimal as u8) << 3
-            | (self.int_disable as u8) << 2
-            | (self.zero as u8) << 1
-            | (self.carry as u8)
+            | (val.break_ as u8) << 4
+            | (val.decimal as u8) << 3
+            | (val.int_disable as u8) << 2
+            | (val.zero as u8) << 1
+            | (val.carry as u8)
     }
 }
 impl From<u8> for Status {

@@ -12,13 +12,14 @@ pub trait Memory: Debug {
 pub struct RAM<const BYTE_SIZE: usize> {
     data: [u8; BYTE_SIZE],
 }
-impl<const BYTE_SIZE: usize> RAM<BYTE_SIZE> {
-    pub fn new() -> Self {
+impl<const BYTE_SIZE: usize> Default for RAM<BYTE_SIZE> {
+    fn default() -> Self {
         Self {
             data: [0; BYTE_SIZE],
         }
     }
-
+}
+impl<const BYTE_SIZE: usize> RAM<BYTE_SIZE> {
     pub fn load_bytes(&mut self, addr_start: usize, data: &[u8]) {
         assert!(
             addr_start + data.len() <= BYTE_SIZE,
@@ -53,13 +54,14 @@ impl<const BYTE_SIZE: usize> Memory for RAM<BYTE_SIZE> {
 pub struct ROM<const BYTE_SIZE: usize> {
     data: [u8; BYTE_SIZE],
 }
-impl<const BYTE_SIZE: usize> ROM<BYTE_SIZE> {
-    pub fn new() -> Self {
+impl<const BYTE_SIZE: usize> Default for ROM<BYTE_SIZE> {
+    fn default() -> Self {
         Self {
             data: [0; BYTE_SIZE],
         }
     }
-
+}
+impl<const BYTE_SIZE: usize> ROM<BYTE_SIZE> {
     pub fn load_bytes(&mut self, addr_start: usize, data: &[u8]) {
         assert!(
             addr_start + data.len() <= BYTE_SIZE,
@@ -81,7 +83,7 @@ impl<const BYTE_SIZE: usize> Memory for ROM<BYTE_SIZE> {
     }
 
     fn write_byte(&mut self, _addr: usize, _data: u8) {
-        //eprintln!("WARN: writing to ROM");
+        // WARN: writing to ROM
     }
 
     fn get_byte_size(&self) -> usize {

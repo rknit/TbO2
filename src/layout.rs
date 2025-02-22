@@ -25,9 +25,9 @@ impl Layout {
         mem.write_byte(addr - offset, data);
     }
 
-    fn get_mem_at_addr(&self, addr: usize) -> (usize, &Box<dyn Memory>) {
+    fn get_mem_at_addr(&self, addr: usize) -> (usize, &dyn Memory) {
         let item = self.slots.range(..=addr).next_back().unwrap();
-        (*item.0, &item.1 .1)
+        (*item.0, item.1 .1.as_ref())
     }
 
     fn get_mem_at_addr_mut(&mut self, addr: usize) -> (usize, &mut Box<dyn Memory>) {
@@ -41,7 +41,7 @@ impl Layout {
             "addr_end cannot be less than addr_start"
         );
         assert!(
-            addr_end - addr_start + 1 <= mem.get_byte_size(),
+            addr_end - addr_start < mem.get_byte_size(),
             "region byte size is too large to fit into the input memory capacity\
             , addr {:#0x} to addr {:#0x} requires {} bytes but the memory only has {} bytes",
             addr_start,
