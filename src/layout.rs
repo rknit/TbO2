@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, ops::Range};
+use std::{
+    collections::{BTreeMap, HashMap},
+    ops::Range,
+};
 
 use crate::mem::Memory;
 
@@ -8,7 +11,7 @@ pub struct MemId(usize);
 pub struct LayoutBuilder {
     max_byte_cnt: usize,
     mems: Vec<Box<dyn Memory>>,
-    mappings: Vec<Mapping>,
+    mappings: Vec<MappingRequest>,
 }
 impl LayoutBuilder {
     pub fn new(max_byte_cnt: usize) -> Self {
@@ -34,7 +37,7 @@ impl LayoutBuilder {
             return self;
         }
 
-        self.mappings.push(Mapping {
+        self.mappings.push(MappingRequest {
             addr_start,
             byte_cnt,
             mem_id,
@@ -48,7 +51,7 @@ impl LayoutBuilder {
 
         let mut space: Vec<MemId> = vec![MemId(usize::MAX); self.max_byte_cnt];
 
-        for Mapping {
+        for MappingRequest {
             addr_start,
             byte_cnt,
             mem_id,
@@ -65,7 +68,7 @@ impl LayoutBuilder {
                 .get(mem_id.0)
                 .ok_or(BuildError::InvalidMemoryId(mem_id))?;
 
-            if addr_start + byte_cnt > mem.get_byte_count() {
+            if byte_cnt > mem.get_byte_count() {
                 return Err(BuildError::MemoryOutOfRange(mem_id));
             }
 
@@ -82,23 +85,58 @@ impl LayoutBuilder {
         }
 
         let mut mappings = BTreeMap::new();
+        let mut phys_mapping = HashMap::new();
         let mut start = 0;
         let mut mem_id = space[0];
 
         for (i, slot) in space.into_iter().enumerate() {
             if slot != mem_id {
-                mappings.insert(start, mem_id);
+                let mem = self.mems.get(mem_id.0).unwrap();
+                let phys_addr_base = phys_mapping.entry(mem_id).or_default();
+                let offset_cnt = i - start;
+
+                if *phys_addr_base + offset_cnt > mem.get_byte_count() {
+                    return Err(BuildError::MemoryOutOfRange(mem_id));
+                }
+
+                mappings.insert(
+                    start,
+                    Mapping {
+                        virtual_addr_start: start,
+                        physical_addr_start: *phys_addr_base,
+                        mem_id,
+                    },
+                );
+                *phys_addr_base += offset_cnt;
                 mem_id = slot;
                 start = i;
             }
         }
-        mappings.insert(start, mem_id);
+
+        {
+            let mem = self.mems.get(mem_id.0).unwrap();
+            let phys_addr_base = phys_mapping.entry(mem_id).or_default();
+            let offset_cnt = self.max_byte_cnt - start;
+
+            if *phys_addr_base + offset_cnt > mem.get_byte_count() {
+                return Err(BuildError::MemoryOutOfRange(mem_id));
+            }
+
+            mappings.insert(
+                start,
+                Mapping {
+                    virtual_addr_start: start,
+                    physical_addr_start: *phys_addr_base,
+                    mem_id,
+                },
+            );
+        }
 
         Ok(Layout::new(self.max_byte_cnt, self.mems, mappings))
     }
 }
 
-struct Mapping {
+struct MappingRequest {
     addr_start: usize,
     byte_cnt: usize,
     mem_id: MemId,
@@ -112,13 +150,23 @@ pub enum BuildError {
     InvalidMemoryId(MemId),
 }
 
+struct Mapping {
+    virtual_addr_start: usize,
+    physical_addr_start: usize,
+    mem_id: MemId,
+}
+
 pub struct Layout {
     byte_cnt: usize,
     mems: Vec<Box<dyn Memory>>,
-    mappings: BTreeMap<usize, MemId>,
+    mappings: BTreeMap<usize, Mapping>,
 }
 impl Layout {
-    fn new(byte_cnt: usize, mems: Vec<Box<dyn Memory>>, mappings: BTreeMap<usize, MemId>) -> Self {
+    fn new(
+        byte_cnt: usize,
+        mems: Vec<Box<dyn Memory>>,
+        mappings: BTreeMap<usize, Mapping>,
+    ) -> Self {
         Self {
             byte_cnt,
             mems,
@@ -130,30 +178,29 @@ impl Layout {
         self.byte_cnt
     }
 
-    fn get_mem_id_at_addr(&self, addr: usize) -> Option<&MemId> {
+    fn get_mapping_at_addr(&self, addr: usize) -> Option<&Mapping> {
         self.mappings.range(..=addr).next_back().map(|v| v.1)
-    }
-
-    fn get_mem_at_addr(&self, addr: usize) -> Option<&dyn Memory> {
-        self.mems
-            .get(self.get_mem_id_at_addr(addr)?.0)
-            .map(move |v| v.as_ref())
-    }
-
-    fn get_mem_at_addr_mut(&mut self, addr: usize) -> Option<&mut dyn Memory> {
-        let idx = self.get_mem_id_at_addr(addr)?.0;
-        self.mems
-            .get_mut(idx)
-            .map(move |v| -> &mut dyn Memory { v.as_mut() })
     }
 }
 impl Memory for Layout {
     fn read_byte(&self, addr: usize) -> Option<u8> {
-        self.get_mem_at_addr(addr)?.read_byte(addr)
+        let Mapping {
+            virtual_addr_start,
+            physical_addr_start,
+            mem_id,
+        } = self.get_mapping_at_addr(addr)?;
+
+        self.mems[mem_id.0].read_byte(physical_addr_start + (addr - virtual_addr_start))
     }
 
     fn write_byte(&mut self, addr: usize, data: u8) -> Option<()> {
-        self.get_mem_at_addr_mut(addr)?.write_byte(addr, data)
+        let Mapping {
+            virtual_addr_start,
+            physical_addr_start,
+            mem_id,
+        } = *self.get_mapping_at_addr(addr)?;
+
+        self.mems[mem_id.0].write_byte(physical_addr_start + (addr - virtual_addr_start), data)
     }
 
     fn get_byte_count(&self) -> usize {
