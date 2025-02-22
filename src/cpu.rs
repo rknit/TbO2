@@ -4,11 +4,10 @@ use log::{log_enabled, trace, Level};
 
 use crate::{
     inst::{decode_inst, AddressingMode, Inst},
-    layout::Layout,
     mem::Memory,
+    Layout,
 };
 
-#[derive(Debug)]
 pub struct CPU {
     pc: u16,
     sp: u8,
@@ -23,31 +22,47 @@ pub struct CPU {
     debug_operand: DebugOp,
     debug_desc: DebugDesc,
 }
-impl Default for CPU {
-    fn default() -> Self {
-        Self {
+impl fmt::Debug for CPU {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CPU")
+            .field("pc", &self.pc)
+            .field("sp", &self.sp)
+            .field("a", &self.a)
+            .field("x", &self.x)
+            .field("y", &self.y)
+            .field("status", &self.status)
+            // .field("layout", &self.layout)
+            // .field("debug_inst", &self.debug_inst)
+            // .field("debug_pc", &self.debug_pc)
+            // .field("debug_operand", &self.debug_operand)
+            // .field("debug_desc", &self.debug_desc)
+            .finish()
+    }
+}
+impl CPU {
+    /// create a 6502 microprocessor emulator.
+    /// _layout_ must have at least 65536 possible addresses ranging from 0x0000 to 0xFFFF.
+    pub fn new(layout: Layout) -> Option<Self> {
+        if layout.get_byte_count() < u16::MAX as usize {
+            return None;
+        }
+
+        Some(Self {
             pc: 0,
             sp: 0,
             a: Default::default(),
             x: Default::default(),
             y: Default::default(),
             status: Status::default(),
-            layout: Layout::new(u16::MAX as usize + 1),
+            layout,
             debug_inst: Inst::LDA,
             debug_pc: 0,
             debug_operand: DebugOp::Implied,
             debug_desc: DebugDesc::ChangeVal(0),
-        }
-    }
-}
-impl CPU {
-    pub fn set_region(&mut self, addr_start: usize, addr_end: usize, mem: Box<dyn Memory>) {
-        self.layout.set_region(addr_start, addr_end, mem);
+        })
     }
 
     pub fn reset(&mut self) {
-        self.layout.validate();
-
         self.status = Status::default();
         self.a = Default::default();
         self.x = Default::default();
@@ -769,16 +784,25 @@ impl CPU {
     }
 
     pub fn read_byte(&self, addr: u16) -> u8 {
-        self.layout.read_byte(addr as usize)
+        match self.layout.read_byte(addr as usize) {
+            Some(v) => v,
+            None => {
+                if log_enabled!(Level::Trace) {
+                    trace!("read byte at {:#06x} failed", addr);
+                }
+                0
+            }
+        }
     }
 
     fn read_word(&self, addr: u16) -> u16 {
-        let lo = self.layout.read_byte(addr as usize) as u16;
-        let hi = self.layout.read_byte(addr as usize + 1) as u16;
+        let lo = self.read_byte(addr) as u16;
+        let hi = self.read_byte(addr + 1) as u16;
         (hi << 8) | lo
     }
 
     pub fn write_byte(&mut self, addr: u16, data: u8) {
+        // not going to verify write result
         self.layout.write_byte(addr as usize, data);
     }
 

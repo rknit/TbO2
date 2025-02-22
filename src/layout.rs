@@ -1,116 +1,162 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, ops::Range};
 
 use crate::mem::Memory;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct MemId(usize);
+
+pub struct LayoutBuilder {
+    max_byte_cnt: usize,
+    mems: Vec<Box<dyn Memory>>,
+    mappings: Vec<Mapping>,
+}
+impl LayoutBuilder {
+    pub fn new(max_byte_cnt: usize) -> Self {
+        Self {
+            max_byte_cnt,
+            mems: vec![],
+            mappings: vec![],
+        }
+    }
+
+    pub fn add_memory(&mut self, mem: impl Memory + 'static) -> MemId {
+        let mem_id = MemId(self.mems.len());
+        self.mems.push(Box::new(mem));
+        mem_id
+    }
+
+    pub fn assign(&mut self, addr: usize, mem_id: MemId) -> &mut Self {
+        self.assign_range(addr, 1, mem_id)
+    }
+
+    pub fn assign_range(&mut self, addr_start: usize, byte_cnt: usize, mem_id: MemId) -> &mut Self {
+        if byte_cnt == 0 {
+            return self;
+        }
+
+        self.mappings.push(Mapping {
+            addr_start,
+            byte_cnt,
+            mem_id,
+        });
+
+        self
+    }
+
+    pub fn build(self) -> Result<Layout, BuildError> {
+        // heresy below
+
+        let mut space: Vec<MemId> = vec![MemId(usize::MAX); self.max_byte_cnt];
+
+        for Mapping {
+            addr_start,
+            byte_cnt,
+            mem_id,
+        } in self.mappings
+        {
+            if addr_start + byte_cnt > self.max_byte_cnt {
+                return Err(BuildError::VirtualAddressOutOfRange(
+                    addr_start..(addr_start + byte_cnt),
+                ));
+            }
+
+            let mem = self
+                .mems
+                .get(mem_id.0)
+                .ok_or(BuildError::InvalidMemoryId(mem_id))?;
+
+            if addr_start + byte_cnt > mem.get_byte_count() {
+                return Err(BuildError::MemoryOutOfRange(mem_id));
+            }
+
+            for slot in space.iter_mut().skip(addr_start).take(byte_cnt) {
+                *slot = mem_id;
+            }
+        }
+
+        for (i, slot) in space.iter().enumerate() {
+            if slot.0 == usize::MAX {
+                let range = space.iter().skip(i + 1).take_while(|v| v.0 == usize::MAX);
+                return Err(BuildError::UnassignedRange(i..(i + range.count())));
+            }
+        }
+
+        let mut mappings = BTreeMap::new();
+        let mut start = 0;
+        let mut mem_id = space[0];
+
+        for (i, slot) in space.into_iter().enumerate() {
+            if slot != mem_id {
+                mappings.insert(start, mem_id);
+                mem_id = slot;
+                start = i;
+            }
+        }
+        mappings.insert(start, mem_id);
+
+        Ok(Layout::new(self.max_byte_cnt, self.mems, mappings))
+    }
+}
+
+#[derive(Debug, Clone)]
+struct Mapping {
+    addr_start: usize,
+    byte_cnt: usize,
+    mem_id: MemId,
+}
+
+pub enum BuildError {
+    UnassignedRange(Range<usize>),
+    VirtualAddressOutOfRange(Range<usize>),
+    MemoryOutOfRange(MemId),
+    InvalidMemoryId(MemId),
+}
+
 pub struct Layout {
-    max_size: usize,
-    slots: BTreeMap<usize, (usize, Box<dyn Memory>)>,
+    byte_cnt: usize,
+    mems: Vec<Box<dyn Memory>>,
+    mappings: BTreeMap<usize, MemId>,
 }
 impl Layout {
-    pub fn new(max_size: usize) -> Self {
+    fn new(byte_cnt: usize, mems: Vec<Box<dyn Memory>>, mappings: BTreeMap<usize, MemId>) -> Self {
         Self {
-            max_size,
-            slots: BTreeMap::new(),
+            byte_cnt,
+            mems,
+            mappings,
         }
     }
 
-    pub fn read_byte(&self, addr: usize) -> u8 {
-        let (offset, mem) = self.get_mem_at_addr(addr);
-        mem.read_byte(addr - offset)
+    pub fn get_byte_count(&self) -> usize {
+        self.byte_cnt
     }
 
-    pub fn write_byte(&mut self, addr: usize, data: u8) {
-        let (offset, mem) = self.get_mem_at_addr_mut(addr);
-        mem.write_byte(addr - offset, data);
+    fn get_mem_id_at_addr(&self, addr: usize) -> Option<&MemId> {
+        self.mappings.range(..=addr).next_back().map(|v| v.1)
     }
 
-    fn get_mem_at_addr(&self, addr: usize) -> (usize, &dyn Memory) {
-        let item = self.slots.range(..=addr).next_back().unwrap();
-        (*item.0, item.1 .1.as_ref())
+    fn get_mem_at_addr(&self, addr: usize) -> Option<&dyn Memory> {
+        self.mems
+            .get(self.get_mem_id_at_addr(addr)?.0)
+            .map(move |v| v.as_ref())
     }
 
-    fn get_mem_at_addr_mut(&mut self, addr: usize) -> (usize, &mut Box<dyn Memory>) {
-        let item = self.slots.range_mut(..=addr).next_back().unwrap();
-        (*item.0, &mut item.1 .1)
+    fn get_mem_at_addr_mut(&mut self, addr: usize) -> Option<&mut dyn Memory> {
+        let idx = self.get_mem_id_at_addr(addr)?.0;
+        self.mems
+            .get_mut(idx)
+            .map(move |v| -> &mut dyn Memory { v.as_mut() })
+    }
+}
+impl Memory for Layout {
+    fn read_byte(&self, addr: usize) -> Option<u8> {
+        self.get_mem_at_addr(addr)?.read_byte(addr)
     }
 
-    pub fn set_region(&mut self, addr_start: usize, addr_end: usize, mem: Box<dyn Memory>) {
-        assert!(
-            addr_start <= addr_end,
-            "addr_end cannot be less than addr_start"
-        );
-        assert!(
-            addr_end - addr_start < mem.get_byte_size(),
-            "region byte size is too large to fit into the input memory capacity\
-            , addr {:#0x} to addr {:#0x} requires {} bytes but the memory only has {} bytes",
-            addr_start,
-            addr_end,
-            addr_end - addr_start + 1,
-            mem.get_byte_size()
-        );
-        assert!(
-            addr_end < self.max_size,
-            "addr_end cannot be greater than layout's max byte size"
-        );
-
-        assert!(
-            !self.slots.contains_key(&addr_start),
-            "the region is already in used"
-        );
-
-        let (prev, next) = {
-            use std::ops::Bound::*;
-
-            let mut before = self.slots.range((Unbounded, Excluded(addr_start)));
-            let mut after = self.slots.range((Excluded(addr_start), Unbounded));
-
-            (before.next_back(), after.next())
-        };
-
-        if let Some((_, (end, _))) = prev {
-            assert!(*end < addr_start, "region overlapped from the lower addr");
-        }
-        if let Some((start, _)) = next {
-            assert!(*start < addr_end, "region overlapped from the higher addr");
-        }
-
-        self.slots.insert(addr_start, (addr_end, mem));
+    fn write_byte(&mut self, addr: usize, data: u8) -> Option<()> {
+        self.get_mem_at_addr_mut(addr)?.write_byte(addr, data)
     }
 
-    pub fn validate(&self) {
-        let mut prev_end: Option<usize> = None;
-        for (start, (end, _)) in &self.slots {
-            if let Some(prev_end) = prev_end {
-                assert!(
-                    start - prev_end == 1,
-                    "undefined memory region from addr {:#0x} to {:#0x}",
-                    prev_end + 1,
-                    start - 1
-                );
-            } else {
-                assert!(
-                    *start == 0,
-                    "undefined memory region from addr {:#0x} to {:#0x}",
-                    0,
-                    start - 1,
-                )
-            }
-            prev_end = Some(*end);
-        }
-        if let Some(prev_end) = prev_end {
-            assert!(
-                prev_end == self.max_size - 1,
-                "undefined memory region from addr {:#0x} to {:#0x}",
-                prev_end + 1,
-                self.max_size - 1
-            );
-        } else {
-            panic!(
-                "undefined memory region from addr {:#0x} to {:#0x}",
-                0,
-                self.max_size - 1
-            );
-        }
+    fn get_byte_count(&self) -> usize {
+        self.byte_cnt
     }
 }
