@@ -98,13 +98,13 @@ impl LayoutBuilder {
     }
 }
 
-#[derive(Debug, Clone)]
 struct Mapping {
     addr_start: usize,
     byte_cnt: usize,
     mem_id: MemId,
 }
 
+#[derive(Debug)]
 pub enum BuildError {
     UnassignedRange(Range<usize>),
     VirtualAddressOutOfRange(Range<usize>),
