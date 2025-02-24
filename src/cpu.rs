@@ -4,8 +4,7 @@ use log::{log_enabled, trace, Level};
 
 use crate::{
     inst::{decode_inst, AddressingMode, Inst},
-    mem::Memory,
-    Layout,
+    Device, Layout,
 };
 
 pub struct CPU {
@@ -39,13 +38,19 @@ impl fmt::Debug for CPU {
             .finish()
     }
 }
+impl Drop for CPU {
+    fn drop(&mut self) {
+        self.layout.on_detach();
+    }
+}
 impl CPU {
     /// create a 6502 microprocessor emulator.
     /// _layout_ must have at least 65536 possible addresses ranging from 0x0000 to 0xFFFF.
-    pub fn new(layout: Layout) -> Option<Self> {
+    pub fn new(mut layout: Layout) -> Option<Self> {
         if layout.get_byte_count() < u16::MAX as usize {
             return None;
         }
+        layout.on_attach();
 
         Some(Self {
             pc: 0,
@@ -63,6 +68,8 @@ impl CPU {
     }
 
     pub fn reset(&mut self) {
+        self.layout.on_reset();
+
         self.status = Status::default();
         self.a = Default::default();
         self.x = Default::default();
@@ -784,7 +791,7 @@ impl CPU {
     }
 
     pub fn read_byte(&self, addr: u16) -> u8 {
-        match self.layout.read_byte(addr as usize) {
+        match self.layout.on_read(addr as usize) {
             Some(v) => v,
             None => {
                 if log_enabled!(Level::Trace) {
@@ -803,7 +810,7 @@ impl CPU {
 
     pub fn write_byte(&mut self, addr: u16, data: u8) {
         // not going to verify write result
-        self.layout.write_byte(addr as usize, data);
+        self.layout.on_write(addr as usize, data);
     }
 
     pub fn set_pc(&mut self, addr: u16) {
