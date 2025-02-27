@@ -40,7 +40,7 @@ impl fmt::Debug for CPU {
 }
 impl Drop for CPU {
     fn drop(&mut self) {
-        self.layout.on_detach();
+        self.layout.detach();
     }
 }
 impl CPU {
@@ -50,7 +50,7 @@ impl CPU {
         if layout.get_byte_count() < u16::MAX as usize {
             return None;
         }
-        layout.on_attach();
+        layout.attach();
 
         Some(Self {
             pc: 0,
@@ -68,7 +68,7 @@ impl CPU {
     }
 
     pub fn reset(&mut self) {
-        self.layout.on_reset();
+        self.layout.reset();
 
         self.status = Status::default();
         self.a = Default::default();
@@ -790,8 +790,8 @@ impl CPU {
         word
     }
 
-    pub fn read_byte(&self, addr: u16) -> u8 {
-        match self.layout.on_read(addr as usize) {
+    pub fn read_byte(&mut self, addr: u16) -> u8 {
+        match self.layout.read(addr as usize) {
             Some(v) => v,
             None => {
                 if log_enabled!(Level::Trace) {
@@ -802,7 +802,7 @@ impl CPU {
         }
     }
 
-    fn read_word(&self, addr: u16) -> u16 {
+    fn read_word(&mut self, addr: u16) -> u16 {
         let lo = self.read_byte(addr) as u16;
         let hi = self.read_byte(addr + 1) as u16;
         (hi << 8) | lo
@@ -810,7 +810,7 @@ impl CPU {
 
     pub fn write_byte(&mut self, addr: u16, data: u8) {
         // not going to verify write result
-        self.layout.on_write(addr as usize, data);
+        self.layout.write(addr as usize, data);
     }
 
     pub fn set_pc(&mut self, addr: u16) {

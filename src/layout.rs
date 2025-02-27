@@ -163,35 +163,35 @@ impl Layout {
     }
 }
 impl Device for Layout {
-    fn on_attach(&mut self) {
-        self.devs.iter_mut().for_each(|v| v.on_attach());
+    fn attach(&mut self) {
+        self.devs.iter_mut().for_each(|v| v.attach());
     }
 
-    fn on_detach(&mut self) {
-        self.devs.iter_mut().for_each(|v| v.on_detach());
+    fn detach(&mut self) {
+        self.devs.iter_mut().for_each(|v| v.detach());
     }
 
-    fn on_reset(&mut self) {
-        self.devs.iter_mut().for_each(|v| v.on_reset());
+    fn reset(&mut self) {
+        self.devs.iter_mut().for_each(|v| v.reset());
     }
 
-    fn on_read(&self, addr: usize) -> Option<u8> {
-        let Mapping {
-            virtual_addr_start,
-            physical_addr_start,
-            mem_id,
-        } = self.get_mapping_at_addr(addr)?;
-
-        self.devs[mem_id.0].on_read(physical_addr_start + (addr - virtual_addr_start))
-    }
-
-    fn on_write(&mut self, addr: usize, data: u8) -> Option<()> {
+    fn read(&mut self, addr: usize) -> Option<u8> {
         let Mapping {
             virtual_addr_start,
             physical_addr_start,
             mem_id,
         } = *self.get_mapping_at_addr(addr)?;
 
-        self.devs[mem_id.0].on_write(physical_addr_start + (addr - virtual_addr_start), data)
+        self.devs[mem_id.0].read(physical_addr_start + (addr - virtual_addr_start))
+    }
+
+    fn write(&mut self, addr: usize, data: u8) -> Option<()> {
+        let Mapping {
+            virtual_addr_start,
+            physical_addr_start,
+            mem_id,
+        } = *self.get_mapping_at_addr(addr)?;
+
+        self.devs[mem_id.0].write(physical_addr_start + (addr - virtual_addr_start), data)
     }
 }
