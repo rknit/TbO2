@@ -12,6 +12,16 @@ pub struct SerialIO<S> {
     read_keys: Vec<u8>,
     display_keys: Arc<Mutex<Vec<u8>>>,
 }
+impl<S: Write + Read + Send + 'static> SerialIO<S> {
+    pub fn new(s: S) -> Self {
+        Self {
+            s: Arc::new(Mutex::new(s)),
+            detached: Arc::new(Mutex::new(true)),
+            read_keys: vec![],
+            display_keys: Arc::new(Mutex::new(vec![])),
+        }
+    }
+}
 impl<S: Write + Read + Send + 'static> Device for SerialIO<S> {
     fn reset(&mut self) {
         self.read_keys.clear();
